@@ -1,0 +1,14 @@
+linters:
+  enable-all: true
+  disable:
+    - forbidigo
+    - varnamelen
+    - nlreturn
+    - gochecknoglobals
+    - exhaustivestruct
+    - exhaustruct
+    - depguard
+    - wsl
+    - lll # line length. Maybe later auto-format the code
+    - gochecknoinits
+    - gci # order of imports. Maybe later auto-format the code
