@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"sync"
 
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 var recordCmd = &cobra.Command{
@@ -80,15 +80,35 @@ func createRecorders(ctx context.Context, serverResources []*metav1.APIResourceL
 			continue
 		}
 		for i := range resourceList.APIResources {
+			resourceName := resourceList.APIResources[i].Name
+			if slices.Contains(resourcesToSkip, groupResource{groupVersion.Group, resourceName}) {
+				continue
+			}
 			go watchGVR(ctx, &args, dynClient, schema.GroupVersionResource{
 				Group:    groupVersion.Group,
 				Version:  groupVersion.Version,
-				Resource: resourceList.APIResources[i].Name,
+				Resource: resourceName,
 			})
 		}
 	}
 	wg.Add(1)
 	wg.Wait()
+}
+
+type groupResource struct {
+	group    string
+	resource string
+}
+
+var resourcesToSkip = []groupResource{
+	{"authentication.k8s.io", "tokenreviews"},
+	{"authorization.k8s.io", "localsubjectaccessreviews"},
+	{"authorization.k8s.io", "subjectaccessreviews"},
+	{"authorization.k8s.io", "selfsubjectrulesreviews"},
+	{"authorization.k8s.io", "selfsubjectaccessreviews"},
+	{"", "componentstatuses"},
+	{"", "bindings"},
+	{"metallb.io", "addresspools"},
 }
 
 func watchGVR(ctx context.Context, args *Arguments, dynClient *dynamic.DynamicClient, gvr schema.GroupVersionResource) error {

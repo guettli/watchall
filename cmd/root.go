@@ -7,8 +7,8 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "check-conditions",
-	Short: "Check your cluster by looking at status.conditions of the resources",
+	Use:   "watchall",
+	Short: "Watch resources in your Kubernetes cluster.",
 	Long:  `...`,
 }
 
