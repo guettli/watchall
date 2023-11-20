@@ -7,6 +7,8 @@ import (
 	"slices"
 	"sync"
 
+	"sigs.k8s.io/yaml"
+
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -139,6 +141,7 @@ func handleEvent(event watch.Event) {
 	switch event.Type {
 	case watch.Added:
 		fmt.Printf("%s %s %s\n", event.Type, gvk.Kind, gvk.Group)
+		storeResource(gvk.Group, gvk.Version, gvk.Kind, obj)
 	case watch.Modified:
 		//json, _ := obj.MarshalJSON()
 		fmt.Printf("%s %s %s %q\n", event.Type, gvk.Kind, gvk.Group, getString(obj, "metadata", "name"))
@@ -151,6 +154,15 @@ func handleEvent(event watch.Event) {
 	default:
 		fmt.Printf("Internal Error, unknown event %s %s\n", event.Type, event.Object)
 	}
+}
+
+func storeResource(group string, version string, kind string, obj *unstructured.Unstructured) {
+	bytes, err := yaml.Marshal(obj)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(string(bytes))
 }
 
 func getString(obj *unstructured.Unstructured, fields ...string) string {
