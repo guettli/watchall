@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"sync"
+	"time"
 
 	"sigs.k8s.io/yaml"
 
@@ -145,6 +147,7 @@ func handleEvent(event watch.Event) {
 	case watch.Modified:
 		//json, _ := obj.MarshalJSON()
 		fmt.Printf("%s %s %s %q\n", event.Type, gvk.Kind, gvk.Group, getString(obj, "metadata", "name"))
+		storeResource(gvk.Group, gvk.Version, gvk.Kind, obj)
 	case watch.Deleted:
 		fmt.Printf("%s %s\n", event.Type, event.Object)
 	case watch.Bookmark:
@@ -156,13 +159,26 @@ func handleEvent(event watch.Event) {
 	}
 }
 
-func storeResource(group string, version string, kind string, obj *unstructured.Unstructured) {
+var outDir = "out"
+
+func storeResource(group string, version string, kind string, obj *unstructured.Unstructured) error {
 	bytes, err := yaml.Marshal(obj)
 	if err != nil {
-		fmt.Println(err)
-		return
+		return err
 	}
-	fmt.Println(string(bytes))
+	name := getString(obj, "metadata", "name")
+	if name == "" {
+		return fmt.Errorf("obj has no name? %+v", obj)
+	}
+	ns := getString(obj, "metadata", "namespace")
+	dir := filepath.Join(outDir, group, kind, ns, name)
+	err = os.MkdirAll(dir, 0777)
+	if err != nil {
+		return err
+	}
+	file := filepath.Join(dir, time.Now().Format("20060102-150405.000")+".yaml")
+	return os.WriteFile(file, bytes, 0666)
+
 }
 
 func getString(obj *unstructured.Unstructured, fields ...string) string {
