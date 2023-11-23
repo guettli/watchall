@@ -132,7 +132,11 @@ func watchGVR(ctx context.Context, args *Arguments, dynClient *dynamic.DynamicCl
 	defer watch.Stop()
 	for {
 		select {
-		case event := <-watch.ResultChan():
+		case event, ok := <-watch.ResultChan():
+			if !ok {
+				// If there are not objects in a resource, the watch gets closed.
+				return nil
+			}
 			handleEvent(gvr, event)
 		case <-ctx.Done():
 			return nil
@@ -162,13 +166,13 @@ func handleEvent(gvr schema.GroupVersionResource, event watch.Event) {
 		fmt.Printf("%s %s %s %q\n", event.Type, gvk.Kind, gvk.Group, getString(obj, "metadata", "name"))
 		storeResource(gvk.Group, gvk.Version, gvk.Kind, obj)
 	case watch.Deleted:
-		fmt.Printf("%s %s\n", event.Type, event.Object)
+		fmt.Printf("%s %+v %s\n", event.Type, gvk, event.Object)
 	case watch.Bookmark:
-		fmt.Printf("%s %s\n", event.Type, event.Object)
+		fmt.Printf("%s %+v %s\n", event.Type, gvk, event.Object)
 	case watch.Error:
-		fmt.Printf("%s %s\n", event.Type, event.Object)
+		fmt.Printf("%s %+v %s\n", event.Type, gvk, event.Object)
 	default:
-		fmt.Printf("Internal Error, unknown event %s %s\n", event.Type, event.Object)
+		fmt.Printf("Internal Error, unknown event %s %+v %s\n", event.Type, gvk, event.Object)
 	}
 }
 
