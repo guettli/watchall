@@ -113,11 +113,16 @@ var resourcesToSkip = []groupResource{
 	{"authorization.k8s.io", "selfsubjectaccessreviews"},
 	{"", "componentstatuses"},
 	{"", "bindings"},
+	{"", "events"}, // exists twice. Second time with group events.k8s.io
 	{"metallb.io", "addresspools"},
+	{"coordination.k8s.io", "leases"},                     // Leases create too many modifications
+	{"apiextensions.k8s.io", "customresourcedefinitions"}, //
 }
 
 func watchGVR(ctx context.Context, args *Arguments, dynClient *dynamic.DynamicClient, gvr schema.GroupVersionResource) error {
 	fmt.Printf("Watching %q %q\n", gvr.Group, gvr.Resource)
+
+	// TODO: Use SendInitialEvents to avoid getting the old state.
 	watch, err := dynClient.Resource(gvr).Watch(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		fmt.Printf("..Error watching %v. group %q version %q resource %q\n", err,
@@ -137,8 +142,9 @@ func watchGVR(ctx context.Context, args *Arguments, dynClient *dynamic.DynamicCl
 
 func handleEvent(gvr schema.GroupVersionResource, event watch.Event) {
 	if event.Object == nil {
-		fmt.Printf("event.Object is nil? Skipping this event. Type=%s %+v gvr: (group=%s version=%s resource=%s)\n", event.Type, event,
+		fmt.Printf("event.Object is nil? Waiting a moment and skipping this event. Type=%s %+v gvr: (group=%s version=%s resource=%s)\n", event.Type, event,
 			gvr.Group, gvr.Version, gvr.Resource)
+		time.Sleep(10 * time.Second)
 		return
 	}
 	gvk := event.Object.GetObjectKind().GroupVersionKind()
