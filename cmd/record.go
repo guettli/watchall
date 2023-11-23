@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -72,11 +73,11 @@ func runRecord(args Arguments) {
 			panic(err)
 		}
 	}
-
-	createRecorders(context.TODO(), serverResources, args, dynClient)
+	host := strings.TrimPrefix(strings.TrimPrefix(config.Host, "https://"), "http://")
+	createRecorders(context.TODO(), serverResources, args, dynClient, host)
 }
 
-func createRecorders(ctx context.Context, serverResources []*metav1.APIResourceList, args Arguments, dynClient *dynamic.DynamicClient) {
+func createRecorders(ctx context.Context, serverResources []*metav1.APIResourceList, args Arguments, dynClient *dynamic.DynamicClient, host string) {
 	var wg sync.WaitGroup
 	for _, resourceList := range serverResources {
 		groupVersion, err := schema.ParseGroupVersion(resourceList.GroupVersion)
@@ -93,7 +94,7 @@ func createRecorders(ctx context.Context, serverResources []*metav1.APIResourceL
 				Group:    groupVersion.Group,
 				Version:  groupVersion.Version,
 				Resource: resourceName,
-			})
+			}, host)
 		}
 	}
 	wg.Add(1)
@@ -119,7 +120,7 @@ var resourcesToSkip = []groupResource{
 	{"apiextensions.k8s.io", "customresourcedefinitions"}, //
 }
 
-func watchGVR(ctx context.Context, args *Arguments, dynClient *dynamic.DynamicClient, gvr schema.GroupVersionResource) error {
+func watchGVR(ctx context.Context, args *Arguments, dynClient *dynamic.DynamicClient, gvr schema.GroupVersionResource, host string) error {
 	fmt.Printf("Watching %q %q\n", gvr.Group, gvr.Resource)
 
 	// TODO: Use SendInitialEvents to avoid getting the old state.
@@ -137,14 +138,14 @@ func watchGVR(ctx context.Context, args *Arguments, dynClient *dynamic.DynamicCl
 				// If there are not objects in a resource, the watch gets closed.
 				return nil
 			}
-			handleEvent(gvr, event)
+			handleEvent(gvr, event, host)
 		case <-ctx.Done():
 			return nil
 		}
 	}
 }
 
-func handleEvent(gvr schema.GroupVersionResource, event watch.Event) {
+func handleEvent(gvr schema.GroupVersionResource, event watch.Event, host string) {
 	if event.Object == nil {
 		fmt.Printf("event.Object is nil? Waiting a moment and skipping this event. Type=%s %+v gvr: (group=%s version=%s resource=%s)\n", event.Type, event,
 			gvr.Group, gvr.Version, gvr.Resource)
@@ -160,11 +161,11 @@ func handleEvent(gvr schema.GroupVersionResource, event watch.Event) {
 	switch event.Type {
 	case watch.Added:
 		fmt.Printf("%s %s %s\n", event.Type, gvk.Kind, gvk.Group)
-		storeResource(gvk.Group, gvk.Version, gvk.Kind, obj)
+		storeResource(gvk.Group, gvk.Version, gvk.Kind, obj, host)
 	case watch.Modified:
 		//json, _ := obj.MarshalJSON()
 		fmt.Printf("%s %s %s %q\n", event.Type, gvk.Kind, gvk.Group, getString(obj, "metadata", "name"))
-		storeResource(gvk.Group, gvk.Version, gvk.Kind, obj)
+		storeResource(gvk.Group, gvk.Version, gvk.Kind, obj, host)
 	case watch.Deleted:
 		fmt.Printf("%s %+v %s\n", event.Type, gvk, event.Object)
 	case watch.Bookmark:
@@ -176,9 +177,9 @@ func handleEvent(gvr schema.GroupVersionResource, event watch.Event) {
 	}
 }
 
-var outDir = "out"
+var outDir = "watchall-output"
 
-func storeResource(group string, version string, kind string, obj *unstructured.Unstructured) error {
+func storeResource(group string, version string, kind string, obj *unstructured.Unstructured, host string) error {
 	bytes, err := yaml.Marshal(obj)
 	if err != nil {
 		return err
@@ -188,7 +189,7 @@ func storeResource(group string, version string, kind string, obj *unstructured.
 		return fmt.Errorf("obj has no name? %+v", obj)
 	}
 	ns := getString(obj, "metadata", "namespace")
-	dir := filepath.Join(outDir, group, kind, ns, name)
+	dir := filepath.Join(outDir, host, group, kind, ns, name)
 	err = os.MkdirAll(dir, 0777)
 	if err != nil {
 		return err
