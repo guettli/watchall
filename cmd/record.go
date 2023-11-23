@@ -46,8 +46,9 @@ func runRecord(args Arguments) {
 		os.Exit(1)
 	}
 
-	config.QPS = 1000
-	config.Burst = 1000
+	// This might increase performance, but we do that many api-calls at the moment.
+	//config.QPS = 1000
+	//config.Burst = 1000
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
@@ -116,6 +117,7 @@ var resourcesToSkip = []groupResource{
 }
 
 func watchGVR(ctx context.Context, args *Arguments, dynClient *dynamic.DynamicClient, gvr schema.GroupVersionResource) error {
+	fmt.Printf("Watching %q %q\n", gvr.Group, gvr.Resource)
 	watch, err := dynClient.Resource(gvr).Watch(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		fmt.Printf("..Error watching %v. group %q version %q resource %q\n", err,
@@ -126,14 +128,19 @@ func watchGVR(ctx context.Context, args *Arguments, dynClient *dynamic.DynamicCl
 	for {
 		select {
 		case event := <-watch.ResultChan():
-			handleEvent(event)
+			handleEvent(gvr, event)
 		case <-ctx.Done():
 			return nil
 		}
 	}
 }
 
-func handleEvent(event watch.Event) {
+func handleEvent(gvr schema.GroupVersionResource, event watch.Event) {
+	if event.Object == nil {
+		fmt.Printf("event.Object is nil? Skipping this event. Type=%s %+v gvr: (group=%s version=%s resource=%s)\n", event.Type, event,
+			gvr.Group, gvr.Version, gvr.Resource)
+		return
+	}
 	gvk := event.Object.GetObjectKind().GroupVersionKind()
 	obj, ok := event.Object.(*unstructured.Unstructured)
 	if !ok {
