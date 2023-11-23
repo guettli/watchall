@@ -73,7 +73,7 @@ func runRecord(args Arguments) {
 			panic(err)
 		}
 	}
-	host := strings.TrimPrefix(strings.TrimPrefix(config.Host, "https://"), "http://")
+	host := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(config.Host, "https://"), "http://"), ":443")
 	createRecorders(context.TODO(), serverResources, args, dynClient, host)
 }
 
