@@ -1,3 +1,4 @@
 .envrc
 *kubeconfig.yaml
 tmp
+watchall-output

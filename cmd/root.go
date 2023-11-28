@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 
+	"github.com/guettli/watchall/record"
 	"github.com/spf13/cobra"
 )
 
@@ -20,16 +21,12 @@ func Execute() {
 	}
 }
 
-type Arguments struct {
-	verbose bool
-}
-
-var arguments Arguments
+var arguments = record.Arguments{}
 
 func init() {
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
-
-	rootCmd.PersistentFlags().BoolVarP(&arguments.verbose, "verbose", "v", false, "Create more output")
+	rootCmd.PersistentFlags().BoolVarP(&arguments.Verbose, "verbose", "v", false, "Create more output")
+	rootCmd.PersistentFlags().StringVarP(&arguments.OutputDirectory, "outdir", "o", "watchall-output", "Directory to store output")
 }
