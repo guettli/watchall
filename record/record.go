@@ -2,16 +2,16 @@ package record
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	"sigs.k8s.io/yaml"
-
+	"github.com/guettli/watchall/config"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -20,22 +20,18 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	_ "modernc.org/sqlite"
 )
 
-type Arguments struct {
-	Verbose         bool
-	OutputDirectory string
-}
-
-func RunRecordWithContext(ctx context.Context, args Arguments, kubeconfig clientcmd.ClientConfig) (*sync.WaitGroup, error) {
+func RunRecordWithContext(ctx context.Context, args config.Arguments, kubeconfig clientcmd.ClientConfig) (*sync.WaitGroup, error) {
 	config, err := kubeconfig.ClientConfig()
 	if err != nil {
 		return nil, err
 	}
 
 	// This might increase performance, but we do that many api-calls at the moment.
-	//config.QPS = 1000
-	//config.Burst = 1000
+	// config.QPS = 1000
+	// config.Burst = 1000
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
@@ -60,10 +56,67 @@ func RunRecordWithContext(ctx context.Context, args Arguments, kubeconfig client
 		}
 	}
 	host := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(config.Host, "https://"), "http://"), ":443")
-	return createRecorders(context.TODO(), serverResources, args, dynClient, host)
+	fn := host + ".db"
+	db, err := sql.Open("sqlite", fn)
+	if err != nil {
+		return nil, err
+	}
+	err = migrateDatabase(db)
+	if err != nil {
+		return nil, err
+	}
+
+	return createRecorders(context.TODO(), db, serverResources, args, dynClient, host)
 }
 
-func createRecorders(ctx context.Context, serverResources []*metav1.APIResourceList, args Arguments, dynClient *dynamic.DynamicClient, host string) (*sync.WaitGroup, error) {
+func migrateDatabase(db *sql.DB) error {
+	v := 0
+	err := db.QueryRow("pragma user_version").Scan(&v)
+	if err != nil {
+		return err
+	}
+	for ; v < 1; v++ {
+		var err error
+		switch v {
+		case 0:
+			err = migrationToSchema0(db)
+		default:
+			panic(fmt.Sprintf("I am confused. No matching schema migration found. %d", v))
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func migrationToSchema0(db *sql.DB) error {
+	_, err := db.Exec(`
+	BEGIN;
+	CREATE TABLE res (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		apiVersion TEXT,
+		name TEXT,
+		namespace TEXT,
+		creationTimestamp TEXT,
+		kind TEXT,
+		resourceVersion TEXT,
+		uid TEXT,
+		json TEXT);
+		CREATE INDEX idx_apiversion ON res(apiVersion);
+		CREATE INDEX idx_name ON res(name);
+		CREATE INDEX idx_namespace ON res(namespace);
+		CREATE INDEX idx_creationTimestamp ON res(creationTimestamp);
+		CREATE INDEX idx_kind ON res(kind);
+		CREATE INDEX idx_resourceVersion ON res(resourceVersion);
+		CREATE INDEX idx_uid ON res(uid);
+		PRAGMA user_version = 1;
+		COMMIT;
+		`)
+	return err
+}
+
+func createRecorders(ctx context.Context, db *sql.DB, serverResources []*metav1.APIResourceList, args config.Arguments, dynClient *dynamic.DynamicClient, host string) (*sync.WaitGroup, error) {
 	var wg sync.WaitGroup
 	for _, resourceList := range serverResources {
 		groupVersion, err := schema.ParseGroupVersion(resourceList.GroupVersion)
@@ -77,7 +130,7 @@ func createRecorders(ctx context.Context, serverResources []*metav1.APIResourceL
 				continue
 			}
 			wg.Add(1)
-			go watchGVR(ctx, &wg, &args, dynClient, schema.GroupVersionResource{
+			go watchGVR(ctx, db, &wg, &args, dynClient, schema.GroupVersionResource{
 				Group:    groupVersion.Group,
 				Version:  groupVersion.Version,
 				Resource: resourceName,
@@ -106,7 +159,7 @@ var resourcesToSkip = []groupResource{
 	{"apiextensions.k8s.io", "customresourcedefinitions"}, //
 }
 
-func watchGVR(ctx context.Context, wg *sync.WaitGroup, args *Arguments, dynClient *dynamic.DynamicClient, gvr schema.GroupVersionResource, host string) error {
+func watchGVR(ctx context.Context, db *sql.DB, wg *sync.WaitGroup, args *config.Arguments, dynClient *dynamic.DynamicClient, gvr schema.GroupVersionResource, host string) error {
 	defer wg.Done()
 	fmt.Printf("Watching %q %q\n", gvr.Group, gvr.Resource)
 
@@ -125,14 +178,14 @@ func watchGVR(ctx context.Context, wg *sync.WaitGroup, args *Arguments, dynClien
 				// If there are not objects in a resource, the watch gets closed.
 				return nil
 			}
-			handleEvent(args, gvr, event, host)
+			handleEvent(db, args, gvr, event, host)
 		case <-ctx.Done():
 			return nil
 		}
 	}
 }
 
-func handleEvent(args *Arguments, gvr schema.GroupVersionResource, event watch.Event, host string) {
+func handleEvent(db *sql.DB, args *config.Arguments, gvr schema.GroupVersionResource, event watch.Event, host string) {
 	if event.Object == nil {
 		fmt.Printf("event.Object is nil? Waiting a moment and skipping this event. Type=%s %+v gvr: (group=%s version=%s resource=%s)\n", event.Type, event,
 			gvr.Group, gvr.Version, gvr.Resource)
@@ -148,11 +201,11 @@ func handleEvent(args *Arguments, gvr schema.GroupVersionResource, event watch.E
 	switch event.Type {
 	case watch.Added:
 		fmt.Printf("%s %s %s\n", event.Type, gvk.Kind, gvk.Group)
-		storeResource(args, gvk.Group, gvk.Version, gvk.Kind, obj, host)
+		storeResource(db, args, gvk.Group, gvk.Version, gvk.Kind, obj, host)
 	case watch.Modified:
-		//json, _ := obj.MarshalJSON()
+		// json, _ := obj.MarshalJSON()
 		fmt.Printf("%s %s %s %q\n", event.Type, gvk.Kind, gvk.Group, getString(obj, "metadata", "name"))
-		storeResource(args, gvk.Group, gvk.Version, gvk.Kind, obj, host)
+		storeResource(db, args, gvk.Group, gvk.Version, gvk.Kind, obj, host)
 	case watch.Deleted:
 		fmt.Printf("%s %+v %s\n", event.Type, gvk, event.Object)
 	case watch.Bookmark:
@@ -164,24 +217,31 @@ func handleEvent(args *Arguments, gvr schema.GroupVersionResource, event watch.E
 	}
 }
 
-func storeResource(args *Arguments, group string, version string, kind string, obj *unstructured.Unstructured, host string) error {
-	bytes, err := yaml.Marshal(obj)
+func storeResource(db *sql.DB, args *config.Arguments, group string, version string, kind string, obj *unstructured.Unstructured, host string) error {
+	jsonResource, err := json.Marshal(obj)
 	if err != nil {
 		return err
 	}
-	name := getString(obj, "metadata", "name")
-	if name == "" {
-		return fmt.Errorf("obj has no name? %+v", obj)
-	}
-	ns := getString(obj, "metadata", "namespace")
-	dir := filepath.Join(args.OutputDirectory, host, group, kind, ns, name)
-	err = os.MkdirAll(dir, 0777)
-	if err != nil {
-		return err
-	}
-	file := filepath.Join(dir, time.Now().Format("20060102-150405.000")+".yaml")
-	return os.WriteFile(file, bytes, 0666)
-
+	_, err = db.Exec(`
+	INSERT INTO res (
+		apiVersion,
+		name,
+		namespace,
+		creationTimestamp,
+		kind,
+		resourceVersion,
+		uid,
+		json)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		getString(obj, "apiVersion"),
+		getString(obj, "metadata", "name"),
+		getString(obj, "metadata", "namespace"),
+		getString(obj, "metadata", "creationTimestamp"),
+		getString(obj, "kind"),
+		getString(obj, "metadata", "resourceVersion"),
+		getString(obj, "metadata", "uid"),
+		jsonResource)
+	return err
 }
 
 func getString(obj *unstructured.Unstructured, fields ...string) string {

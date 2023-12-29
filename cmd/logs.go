@@ -10,7 +10,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/guettli/watchall/record"
+	"github.com/guettli/watchall/config"
 	"github.com/spf13/cobra"
 )
 
@@ -27,7 +27,7 @@ func init() {
 	rootCmd.AddCommand(logsCmd)
 }
 
-func runLogs(args record.Arguments) {
+func runLogs(args config.Arguments) {
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	configOverrides := &clientcmd.ConfigOverrides{}
 	kubeconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)

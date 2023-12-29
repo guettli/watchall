@@ -3,3 +3,4 @@
 *.kubeconfig
 tmp
 watchall-output
+*.db
