@@ -7,6 +7,7 @@ import (
 
 	"github.com/guettli/watchall/config"
 	"github.com/guettli/watchall/record"
+	"github.com/guettli/watchall/ui"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -31,11 +32,17 @@ func runArgs(args config.Arguments) {
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	configOverrides := &clientcmd.ConfigOverrides{}
 	kubeconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
-	wg, err := record.RunRecordWithContext(context.Background(), args, kubeconfig)
+	ctx := context.Background()
+	wg, err := record.RunRecordWithContext(ctx, args, kubeconfig)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ui.RunUIWithContext(ctx, args, kubeconfig)
+	}()
 	wg.Wait()
 }
 
