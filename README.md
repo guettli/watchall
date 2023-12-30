@@ -4,18 +4,11 @@
 
 At the moment I use it mostly to record how conditions of CRDs change over time.
 
-# Next: sql model
+# Development
 
-How to get the yaml into a useful db schema?
-
-GVK, Name, Namespace, Conditions
-
-OwnerRefs
-
-Annotations, Labels,
-
-
-
+```
+❯ templ generate --watch --cmd="go run main.go"
+```
 
 # how to visualize the many yaml files?
 
