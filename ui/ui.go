@@ -9,16 +9,19 @@ import (
 
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/a-h/templ"
 	"github.com/guettli/watchall/config"
 )
 
 func RunUIWithContext(ctx context.Context, args config.Arguments, kubeconfig clientcmd.ClientConfig) error {
-	http.Handle("/", templ.Handler(page()))
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		page(
+			r.URL.Query().Get("ns"),
+		).Render(r.Context(), w)
+	})
 	http.Handle("/static/", http.StripPrefix("/static/", setContentTypeMiddleware(
 		http.FileServer(http.Dir("./static")))))
 
-	fmt.Println("Listening on :3000")
+	fmt.Println("Listening on http://localhost:3000/")
 	return http.ListenAndServe(":3000", nil)
 }
 
