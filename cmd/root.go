@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/guettli/watchall/config"
 	"github.com/guettli/watchall/record"
@@ -33,11 +34,15 @@ func runArgs(args config.Arguments) {
 	configOverrides := &clientcmd.ConfigOverrides{}
 	kubeconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
 	ctx := context.Background()
-	wg, err := record.RunRecordWithContext(ctx, args, kubeconfig)
-	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+	wg := sync.WaitGroup{}
+	if false {
+		err := record.RunRecordWithContext(ctx, &wg, args, kubeconfig)
+		if err != nil {
+			fmt.Println(err.Error())
+			os.Exit(1)
+		}
 	}
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()

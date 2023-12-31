@@ -23,10 +23,10 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func RunRecordWithContext(ctx context.Context, args config.Arguments, kubeconfig clientcmd.ClientConfig) (*sync.WaitGroup, error) {
+func RunRecordWithContext(ctx context.Context, wg *sync.WaitGroup, args config.Arguments, kubeconfig clientcmd.ClientConfig) error {
 	config, err := kubeconfig.ClientConfig()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// This might increase performance, but we do that many api-calls at the moment.
@@ -35,12 +35,12 @@ func RunRecordWithContext(ctx context.Context, args config.Arguments, kubeconfig
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	dynClient, err := dynamic.NewForConfig(config)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	discoveryClient := clientset.Discovery()
@@ -52,21 +52,21 @@ func RunRecordWithContext(ctx context.Context, args config.Arguments, kubeconfig
 			fmt.Printf("WARNING: The Kubernetes server has an orphaned API service. Server reports: %s\n", err.Error())
 			fmt.Printf("WARNING: To fix this, kubectl delete apiservice <service-name>\n")
 		} else {
-			return nil, err
+			return err
 		}
 	}
 	host := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(config.Host, "https://"), "http://"), ":443")
 	fn := host + ".db"
 	db, err := sql.Open("sqlite", fn)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	err = migrateDatabase(db)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return createRecorders(context.TODO(), db, serverResources, args, dynClient, host)
+	return createRecorders(context.TODO(), wg, db, serverResources, args, dynClient, host)
 }
 
 func migrateDatabase(db *sql.DB) error {
@@ -116,8 +116,7 @@ func migrationToSchema0(db *sql.DB) error {
 	return err
 }
 
-func createRecorders(ctx context.Context, db *sql.DB, serverResources []*metav1.APIResourceList, args config.Arguments, dynClient *dynamic.DynamicClient, host string) (*sync.WaitGroup, error) {
-	var wg sync.WaitGroup
+func createRecorders(ctx context.Context, wg *sync.WaitGroup, db *sql.DB, serverResources []*metav1.APIResourceList, args config.Arguments, dynClient *dynamic.DynamicClient, host string) error {
 	for _, resourceList := range serverResources {
 		groupVersion, err := schema.ParseGroupVersion(resourceList.GroupVersion)
 		if err != nil {
@@ -130,14 +129,14 @@ func createRecorders(ctx context.Context, db *sql.DB, serverResources []*metav1.
 				continue
 			}
 			wg.Add(1)
-			go watchGVR(ctx, db, &wg, &args, dynClient, schema.GroupVersionResource{
+			go watchGVR(ctx, db, wg, &args, dynClient, schema.GroupVersionResource{
 				Group:    groupVersion.Group,
 				Version:  groupVersion.Version,
 				Resource: resourceName,
 			}, host)
 		}
 	}
-	return &wg, nil
+	return nil
 }
 
 type groupResource struct {
