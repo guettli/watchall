@@ -7,7 +7,7 @@ At the moment I use it mostly to record how conditions of CRDs change over time.
 # Development
 
 ```
-❯ templ generate --watch --cmd="go run main.go"
+❯ wgo -file=.go -file=.templ -xfile=_templ.go templ generate :: go run main.go
 ```
 
 # how to visualize the many yaml files?

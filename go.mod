@@ -1,9 +1,10 @@
 module github.com/guettli/watchall
 
-go 1.21
+go 1.21.5
 
 require (
 	github.com/a-h/templ v0.2.501
+	github.com/guettli/contentencoding v0.0.1
 	github.com/spf13/cobra v1.7.0
 	k8s.io/api v0.28.0
 	k8s.io/apimachinery v0.28.0

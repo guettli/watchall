@@ -10,7 +10,7 @@ import "context"
 import "io"
 import "bytes"
 
-func page(ns string) templ.Component {
+func page(query string) templ.Component {
 	return templ.ComponentFunc(func(ctx context.Context, templ_7745c5c3_W io.Writer) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templ_7745c5c3_W.(*bytes.Buffer)
 		if !templ_7745c5c3_IsBuffer {
@@ -32,15 +32,15 @@ func page(ns string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</title><link href=\"/static/bootstrap-v5.3.2.min.css.gz\" rel=\"stylesheet\"></head><body><form><input type=\"text\" name=\"ns\" value=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</title><link href=\"/static/bootstrap-v5.3.2.min.css.gz\" rel=\"stylesheet\"></head><body><form><input type=\"text\" name=\"query\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(ns))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(query))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("\" placeholder=\"namespace\"></form><script src=\"/static/bootstrap.bundle-v5.3.2.min.js.gz\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("\" placeholder=\"query\"></form><script src=\"/static/bootstrap.bundle-v5.3.2.min.js.gz\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

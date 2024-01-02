@@ -56,7 +56,7 @@ func RunRecordWithContext(ctx context.Context, wg *sync.WaitGroup, args config.A
 		}
 	}
 	host := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(config.Host, "https://"), "http://"), ":443")
-	fn := host + ".db"
+	fn := host + ".sqlite"
 	db, err := sql.Open("sqlite", fn)
 	if err != nil {
 		return err

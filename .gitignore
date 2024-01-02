@@ -3,4 +3,4 @@
 *.kubeconfig
 tmp
 watchall-output
-*.db
+*.sqlite
