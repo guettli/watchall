@@ -1,12 +1,15 @@
 package ui
 
-templ page(query string) {
+import "github.com/guettli/watchall/dbstuff"
+import "fmt"
+
+templ page(query, hxGet string) {
 	<!DOCTYPE html>
 	<html lang="en">
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<title>Bootstrap demo</title>
+			<title>watchall { query } </title>
 			<link href="/static/bootstrap-v5.3.2.min.css.gz" rel="stylesheet"/>
 		</head>
 		<body>
@@ -16,5 +19,31 @@ templ page(query string) {
 			<script src="/static/bootstrap.bundle-v5.3.2.min.js.gz"></script>
 			<script src="/static/htmx-v1.9.10.min.js.gz"></script>
 		</body>
+		<table>
+			<tr
+				hx-get={ hxGet }
+				hx-trigger="revealed"
+				hx-swap="afterend"
+			></tr>
+		</table>
 	</html>
+}
+
+templ hxRow(resource dbstuff.Resource) {
+	<tr>
+		<td>{ fmt.Sprint(resource.Id) }</td>
+		<td>{ resource.Name }</td>
+		<td>{ resource.Namespace }</td>
+		<td>{ resource.CreationTimestamp.String() }</td>
+		<td>{ resource.Kind }</td>
+		<td>{ resource.ResourceVersion }</td>
+		<td>{ resource.Uid }</td>
+		<td>{ resource.Json }</td>
+	</tr>
+}
+
+templ hxRows(resources []dbstuff.Resource) {
+	for _, res := range resources {
+		@hxRow(res)
+	}
 }

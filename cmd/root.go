@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/guettli/watchall/config"
+	"github.com/guettli/watchall/dbstuff"
 	"github.com/guettli/watchall/record"
 	"github.com/guettli/watchall/ui"
 	"github.com/spf13/cobra"
@@ -33,10 +34,22 @@ func runArgs(args config.Arguments) {
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	configOverrides := &clientcmd.ConfigOverrides{}
 	kubeconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
+
+	config, err := kubeconfig.ClientConfig()
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+	db, host, err := dbstuff.GetDB(config.Host)
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+
 	ctx := context.Background()
 	wg := sync.WaitGroup{}
 	if false {
-		err := record.RunRecordWithContext(ctx, &wg, args, kubeconfig)
+		err := record.RunRecordWithContext(ctx, &wg, args, config, db, host)
 		if err != nil {
 			fmt.Println(err.Error())
 			os.Exit(1)
@@ -46,7 +59,7 @@ func runArgs(args config.Arguments) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		ui.RunUIWithContext(ctx, args, kubeconfig)
+		ui.RunUIWithContext(ctx, args, db)
 	}()
 	wg.Wait()
 }

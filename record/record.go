@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -19,16 +18,11 @@ import (
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
+	restclient "k8s.io/client-go/rest"
 	_ "modernc.org/sqlite"
 )
 
-func RunRecordWithContext(ctx context.Context, wg *sync.WaitGroup, args config.Arguments, kubeconfig clientcmd.ClientConfig) error {
-	config, err := kubeconfig.ClientConfig()
-	if err != nil {
-		return err
-	}
-
+func RunRecordWithContext(ctx context.Context, wg *sync.WaitGroup, args config.Arguments, config *restclient.Config, db *sql.DB, host string) error {
 	// This might increase performance, but we do that many api-calls at the moment.
 	// config.QPS = 1000
 	// config.Burst = 1000
@@ -55,65 +49,7 @@ func RunRecordWithContext(ctx context.Context, wg *sync.WaitGroup, args config.A
 			return err
 		}
 	}
-	host := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(config.Host, "https://"), "http://"), ":443")
-	fn := host + ".sqlite"
-	db, err := sql.Open("sqlite", fn)
-	if err != nil {
-		return err
-	}
-	err = migrateDatabase(db)
-	if err != nil {
-		return err
-	}
-
 	return createRecorders(context.TODO(), wg, db, serverResources, args, dynClient, host)
-}
-
-func migrateDatabase(db *sql.DB) error {
-	v := 0
-	err := db.QueryRow("pragma user_version").Scan(&v)
-	if err != nil {
-		return err
-	}
-	for ; v < 1; v++ {
-		var err error
-		switch v {
-		case 0:
-			err = migrationToSchema0(db)
-		default:
-			panic(fmt.Sprintf("I am confused. No matching schema migration found. %d", v))
-		}
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func migrationToSchema0(db *sql.DB) error {
-	_, err := db.Exec(`
-	BEGIN;
-	CREATE TABLE res (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		apiVersion TEXT,
-		name TEXT,
-		namespace TEXT,
-		creationTimestamp TEXT,
-		kind TEXT,
-		resourceVersion TEXT,
-		uid TEXT,
-		json TEXT);
-		CREATE INDEX idx_apiversion ON res(apiVersion);
-		CREATE INDEX idx_name ON res(name);
-		CREATE INDEX idx_namespace ON res(namespace);
-		CREATE INDEX idx_creationTimestamp ON res(creationTimestamp);
-		CREATE INDEX idx_kind ON res(kind);
-		CREATE INDEX idx_resourceVersion ON res(resourceVersion);
-		CREATE INDEX idx_uid ON res(uid);
-		PRAGMA user_version = 1;
-		COMMIT;
-		`)
-	return err
 }
 
 func createRecorders(ctx context.Context, wg *sync.WaitGroup, db *sql.DB, serverResources []*metav1.APIResourceList, args config.Arguments, dynClient *dynamic.DynamicClient, host string) error {
