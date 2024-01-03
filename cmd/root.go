@@ -2,15 +2,19 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 
 	"github.com/guettli/watchall/config"
 	"github.com/guettli/watchall/dbstuff"
 	"github.com/guettli/watchall/record"
 	"github.com/guettli/watchall/ui"
 	"github.com/spf13/cobra"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -30,6 +34,8 @@ func Execute() {
 	}
 }
 
+var errSIGINT = fmt.Errorf("received SIGINT (ctrl-c)")
+
 func runArgs(args config.Arguments) {
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	configOverrides := &clientcmd.ConfigOverrides{}
@@ -46,10 +52,33 @@ func runArgs(args config.Arguments) {
 		os.Exit(1)
 	}
 
-	ctx := context.Background()
+	defer func() {
+		db.Close()
+		fmt.Println("db was closed.")
+	}()
+
+	args.Db = db
+	args.FatalErrorChannel = make(chan error)
+	args.StoreChannel = make(chan *unstructured.Unstructured)
 	wg := sync.WaitGroup{}
-	if false {
-		err := record.RunRecordWithContext(ctx, &wg, args, config, db, host)
+
+	ctx, cancelFunc := context.WithCancelCause(context.Background())
+	args.CancelFunc = cancelFunc
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		handleFatalErrorChannel(ctx, &args)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		record.HandleStoreChannel(ctx, &args)
+	}()
+
+	if true {
+		err := record.RunRecordWithContext(ctx, &wg, args, config, host)
 		if err != nil {
 			fmt.Println(err.Error())
 			os.Exit(1)
@@ -61,10 +90,34 @@ func runArgs(args config.Arguments) {
 		defer wg.Done()
 		ui.RunUIWithContext(ctx, args, db)
 	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGINT) // catch ctrl-c
+		sig := <-sigs
+		fmt.Printf("Received signal %+v\n", sig)
+		args.FatalErrorChannel <- errSIGINT
+	}()
+
 	wg.Wait()
 }
 
 var arguments = config.Arguments{}
+
+func handleFatalErrorChannel(ctx context.Context, args *config.Arguments) {
+	select {
+	case err := <-args.FatalErrorChannel:
+		if !errors.Is(err, errSIGINT) {
+			fmt.Printf("handleFatalErrorChannel received: %+v\n", err)
+		}
+		args.CancelFunc(err)
+		return
+	case <-ctx.Done():
+		return
+	}
+}
 
 func init() {
 	// Here you will define your flags and configuration settings.

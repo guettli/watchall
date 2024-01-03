@@ -80,6 +80,7 @@ func migrationToSchema0(db *sql.DB) error {
 	BEGIN;
 	CREATE TABLE res (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		timestamp TEXT DEFAULT(STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')),
 		apiVersion TEXT,
 		name TEXT,
 		namespace TEXT,
@@ -87,7 +88,7 @@ func migrationToSchema0(db *sql.DB) error {
 		kind TEXT,
 		resourceVersion TEXT,
 		uid TEXT,
-		json TEXT);
+		json TEXT) STRICT;
 		CREATE INDEX idx_apiversion ON res(apiVersion);
 		CREATE INDEX idx_name ON res(name);
 		CREATE INDEX idx_namespace ON res(namespace);

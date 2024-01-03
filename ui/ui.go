@@ -4,7 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
+	"sync"
+
+	_ "net/http"
+	_ "net/http/pprof" // see http://localhost:1234/debug/pprof
 
 	"github.com/guettli/contentencoding"
 	"github.com/guettli/watchall/config"
@@ -51,5 +56,20 @@ func RunUIWithContext(ctx context.Context, args config.Arguments, db *sql.DB) er
 		contentencoding.FileServer(http.Dir("./static"))))
 
 	fmt.Println("Listening on http://localhost:3000/")
-	return http.ListenAndServe(":3000", nil)
+
+	srv := &http.Server{Addr: ":3000"}
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done() // let main know we are done cleaning up
+
+		// always returns error. ErrServerClosed on graceful close
+		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+			// unexpected error. port in use?
+			log.Fatalf("ListenAndServe(): %v", err)
+		}
+	}()
+	<-ctx.Done()
+	srv.Shutdown(context.Background())
+	return nil
 }
