@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"sync"
+	"runtime/pprof"
 	"syscall"
+	"time"
 
 	"github.com/guettli/watchall/config"
 	"github.com/guettli/watchall/dbstuff"
@@ -16,6 +17,8 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/tools/clientcmd"
+
+	_ "net/http/pprof"
 )
 
 var rootCmd = &cobra.Command{
@@ -60,48 +63,54 @@ func runArgs(args config.Arguments) {
 	args.Db = db
 	args.FatalErrorChannel = make(chan error)
 	args.StoreChannel = make(chan *unstructured.Unstructured)
-	wg := sync.WaitGroup{}
 
 	ctx, cancelFunc := context.WithCancelCause(context.Background())
 	args.CancelFunc = cancelFunc
 
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
+		for {
+			// Somehow the first ctrl-c is sometimes not enough.
+			sigs := make(chan os.Signal, 1)
+			signal.Notify(sigs, syscall.SIGINT) // catch ctrl-c
+			sig := <-sigs
+			fmt.Printf("Received signal %+v\n", sig)
+			args.FatalErrorChannel <- errSIGINT
+
+			time.Sleep(3 * time.Second)
+
+			// The program has not terminated yet? Sad, that's not what we want.
+			fmt.Println("Not terminated yet? Let's have a look at the goroutines")
+			pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+
+		}
+	}()
+
+	go func() {
 		handleFatalErrorChannel(ctx, &args)
 	}()
 
-	wg.Add(1)
+	fmt.Println("per HandleStoreChannel")
 	go func() {
-		defer wg.Done()
 		record.HandleStoreChannel(ctx, &args)
 	}()
 
+	fmt.Println("per RunRecordWithContext")
+
 	if true {
-		err := record.RunRecordWithContext(ctx, &wg, args, config, host)
+		err := record.RunRecordWithContext(ctx, args, config, host)
 		if err != nil {
 			fmt.Println(err.Error())
 			os.Exit(1)
 		}
 	}
+	fmt.Println("per RunUIWithContext")
 
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
 		ui.RunUIWithContext(ctx, args, db)
 	}()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT) // catch ctrl-c
-		sig := <-sigs
-		fmt.Printf("Received signal %+v\n", sig)
-		args.FatalErrorChannel <- errSIGINT
-	}()
-
-	wg.Wait()
+	<-ctx.Done()
+	fmt.Println("post waitttttttttttt")
 }
 
 var arguments = config.Arguments{}

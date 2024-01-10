@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"sync"
 
 	_ "net/http"
 	_ "net/http/pprof" // see http://localhost:1234/debug/pprof
@@ -23,7 +22,7 @@ func errorHandler(w http.ResponseWriter, r *http.Request, status int) {
 	}
 }
 
-func RunUIWithContext(ctx context.Context, args config.Arguments, db *sql.DB) error {
+func RunUIWithContext(ctx context.Context, args config.Arguments, db *sql.DB) {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			errorHandler(w, r, http.StatusNotFound)
@@ -42,6 +41,7 @@ func RunUIWithContext(ctx context.Context, args config.Arguments, db *sql.DB) er
 		if err != nil {
 			panic(err) // todo
 		}
+		defer rows.Close()
 		var resources []dbstuff.Resource
 		for rows.Next() {
 			res, err := dbstuff.ResourceNewFromRow(rows)
@@ -58,18 +58,9 @@ func RunUIWithContext(ctx context.Context, args config.Arguments, db *sql.DB) er
 	fmt.Println("Listening on http://localhost:3000/")
 
 	srv := &http.Server{Addr: ":3000"}
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done() // let main know we are done cleaning up
-
-		// always returns error. ErrServerClosed on graceful close
-		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-			// unexpected error. port in use?
-			log.Fatalf("ListenAndServe(): %v", err)
-		}
-	}()
-	<-ctx.Done()
-	srv.Shutdown(context.Background())
-	return nil
+	// always returns error. ErrServerClosed on graceful close
+	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+		// unexpected error. port in use?
+		log.Fatalf("ListenAndServe(): %v", err)
+	}
 }

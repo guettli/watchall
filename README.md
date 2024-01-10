@@ -10,6 +10,10 @@ At the moment I use it mostly to record how conditions of CRDs change over time.
 ❯ wgo -file=.go -file=.templ -xfile=_templ.go templ generate :: go run main.go
 ```
 
+# TODO
+
+See TODO.md
+
 # how to visualize the many yaml files?
 
 Diff the yaml or diff the html created from a yaml file?
@@ -26,7 +30,7 @@ Hide all resources which have not changed during the recording.
 
 # Analyzing: Set markers
 
-During analyzing the output, I want to be able set markers.
+During analyzing the output (going through the history), I want to be able set markers.
 
 For example the timestamp that the cluster was deleted because
 the timeout was reached.
@@ -50,7 +54,6 @@ I think SQLight would be better.
 Flat table: All resources are in one table.
 
 Deduplication? Not now, optimize later.
-
 
 
 # Collection: During e2e test

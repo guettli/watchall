@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/guettli/watchall/config"
@@ -21,7 +20,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func RunRecordWithContext(ctx context.Context, wg *sync.WaitGroup, args config.Arguments, config *restclient.Config, host string) error {
+func RunRecordWithContext(ctx context.Context, args config.Arguments, config *restclient.Config, host string) error {
 	// This might increase performance, but we do that many api-calls at the moment.
 	// config.QPS = 1000
 	// config.Burst = 1000
@@ -48,10 +47,10 @@ func RunRecordWithContext(ctx context.Context, wg *sync.WaitGroup, args config.A
 			return err
 		}
 	}
-	return createRecorders(ctx, wg, serverResources, args, dynClient, host)
+	return createRecorders(ctx, serverResources, args, dynClient, host)
 }
 
-func createRecorders(ctx context.Context, wg *sync.WaitGroup, serverResources []*metav1.APIResourceList, args config.Arguments, dynClient *dynamic.DynamicClient, host string) error {
+func createRecorders(ctx context.Context, serverResources []*metav1.APIResourceList, args config.Arguments, dynClient *dynamic.DynamicClient, host string) error {
 	for _, resourceList := range serverResources {
 		groupVersion, err := schema.ParseGroupVersion(resourceList.GroupVersion)
 		if err != nil {
@@ -63,8 +62,7 @@ func createRecorders(ctx context.Context, wg *sync.WaitGroup, serverResources []
 			if slices.Contains(resourcesToSkip, groupResource{groupVersion.Group, resourceName}) {
 				continue
 			}
-			wg.Add(1)
-			go watchGVR(ctx, wg, &args, dynClient, schema.GroupVersionResource{
+			go watchGVR(ctx, &args, dynClient, schema.GroupVersionResource{
 				Group:    groupVersion.Group,
 				Version:  groupVersion.Version,
 				Resource: resourceName,
@@ -93,7 +91,7 @@ var resourcesToSkip = []groupResource{
 	{"apiextensions.k8s.io", "customresourcedefinitions"}, //
 }
 
-func watchGVR(ctx context.Context, wg *sync.WaitGroup, args *config.Arguments, dynClient *dynamic.DynamicClient, gvr schema.GroupVersionResource, host string) (reterr error) {
+func watchGVR(ctx context.Context, args *config.Arguments, dynClient *dynamic.DynamicClient, gvr schema.GroupVersionResource, host string) (reterr error) {
 	defer func() {
 		// Could not find a good way to stop all Go routine.
 		// Still looking for a better solution.
@@ -102,7 +100,6 @@ func watchGVR(ctx context.Context, wg *sync.WaitGroup, args *config.Arguments, d
 			fmt.Printf("Watching GroupVersionResource failed (%s): %s", gvr, reterr.Error())
 		}
 	}()
-	defer wg.Done()
 	fmt.Printf("Watching %q %q\n", gvr.Group, gvr.Resource)
 
 	// TODO: Use SendInitialEvents to avoid getting the old state.

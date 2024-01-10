@@ -49,6 +49,7 @@ func migrateDatabase(db *sql.DB) error {
 
 type Resource struct {
 	Id                int64
+	Timestamp         time.Time
 	ApiVersion        string
 	Name              string
 	Namespace         string
@@ -66,12 +67,17 @@ type RowScanner interface {
 func ResourceNewFromRow(scanner RowScanner) (Resource, error) {
 	var res Resource
 	var timestamp string
-	err := scanner.Scan(&res.Id, &res.ApiVersion, &res.Name, &res.Namespace, &timestamp, &res.Kind,
+	var creationTimestamp string
+	err := scanner.Scan(&res.Id, &timestamp, &res.ApiVersion, &res.Name, &res.Namespace, &creationTimestamp, &res.Kind,
 		&res.ResourceVersion, &res.Uid, &res.Json)
 	if err != nil {
 		return res, err
 	}
-	res.CreationTimestamp, err = time.Parse("2006-01-02T15:04:05Z", timestamp)
+	res.Timestamp, err = time.Parse("2006-01-02 15:04:05.9999999", timestamp)
+	if err != nil {
+		return res, err
+	}
+	res.CreationTimestamp, err = time.Parse("2006-01-02T15:04:05Z", creationTimestamp)
 	return res, err
 }
 
