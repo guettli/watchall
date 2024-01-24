@@ -3,7 +3,6 @@ package dbstuff
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -31,14 +30,11 @@ func GetPool(ctx context.Context, configHost string) (pool *sqlitex.Pool, host s
 }
 
 func migrateDatabase(ctx context.Context, pool *sqlitex.Pool) error {
-	vStr, err := QueryText(ctx, pool, "pragma user_version", []any{})
+	conn := pool.Get(ctx)
+	defer pool.Put(conn)
+	v, err := userVersion(conn)
 	if err != nil {
-		return err
-	}
-
-	v, err := strconv.ParseInt(vStr, 10, 64)
-	if err != nil {
-		return err
+		return fmt.Errorf("failed to get user_version of DB: %w", err)
 	}
 	for ; v < 1; v++ {
 		var err error
@@ -68,10 +64,6 @@ type Resource struct {
 	Json              string
 }
 
-type RowScanner interface {
-	Scan(dest ...any) error
-}
-
 func ResourceNewFromRow(stmt *sqlite.Stmt) Resource {
 	var res Resource
 	res.Id = stmt.ColumnInt64(0)
@@ -87,9 +79,10 @@ func ResourceNewFromRow(stmt *sqlite.Stmt) Resource {
 	return res
 }
 
-func migrationToSchema0(ctx context.Context, pool sqlitex.Pool) error {
-	_, err := db.Exec(`
-	BEGIN;
+func migrationToSchema0(ctx context.Context, pool *sqlitex.Pool) error {
+	conn := pool.Get(ctx)
+	defer pool.Put(conn)
+	return sqlitex.ExecScript(conn, `
 	CREATE TABLE res (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		timestamp TEXT DEFAULT(STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')),
@@ -109,9 +102,7 @@ func migrationToSchema0(ctx context.Context, pool sqlitex.Pool) error {
 		CREATE INDEX idx_resourceVersion ON res(resourceVersion);
 		CREATE INDEX idx_uid ON res(uid);
 		PRAGMA user_version = 1;
-		COMMIT;
 		`)
-	return err
 }
 
 func Query(ctx context.Context, pool *sqlitex.Pool, query string, opts *sqlitex.ExecOptions) error {
@@ -138,4 +129,38 @@ func QueryText(ctx context.Context, pool *sqlitex.Pool, query string, queryArgs 
 		return text, err
 	}
 	return text, nil
+}
+
+func QueryInt(ctx context.Context, pool *sqlitex.Pool, query string, queryArgs []any) (int, error) {
+	var ret int
+	err := Query(ctx, pool, query, &sqlitex.ExecOptions{
+		Args: queryArgs,
+		ResultFunc: func(stmt *sqlite.Stmt) error {
+			i, err := sqlitex.ResultInt(stmt)
+			ret = i
+			if err != nil {
+				return err
+			}
+			return nil
+		},
+	},
+	)
+	if err != nil {
+		return ret, err
+	}
+	return ret, nil
+}
+
+func userVersion(conn *sqlite.Conn) (int32, error) {
+	var version int32
+	err := sqlitex.ExecuteTransient(conn, "PRAGMA user_version", &sqlitex.ExecOptions{
+		ResultFunc: func(stmt *sqlite.Stmt) error {
+			version = stmt.ColumnInt32(0)
+			return nil
+		},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("get database user_version: %w", err)
+	}
+	return version, nil
 }

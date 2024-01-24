@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/guettli/watchall/config"
+	"github.com/guettli/watchall/dbstuff"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -17,7 +18,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
-	_ "modernc.org/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
 )
 
 func RunRecordWithContext(ctx context.Context, args config.Arguments, config *restclient.Config, host string) error {
@@ -179,7 +180,7 @@ func HandleStoreChannel(ctx context.Context, args *config.Arguments) {
 				args.FatalErrorChannel <- err
 				return
 			}
-			_, err = args.Pool.Exec(`
+			err = dbstuff.Query(ctx, args.Pool, `
 	INSERT INTO res (
 		apiVersion,
 		name,
@@ -190,14 +191,18 @@ func HandleStoreChannel(ctx context.Context, args *config.Arguments) {
 		uid,
 		json)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-				getString(obj, "apiVersion"),
-				getString(obj, "metadata", "name"),
-				getString(obj, "metadata", "namespace"),
-				getString(obj, "metadata", "creationTimestamp"),
-				getString(obj, "kind"),
-				getString(obj, "metadata", "resourceVersion"),
-				getString(obj, "metadata", "uid"),
-				string(jsonResource))
+				&sqlitex.ExecOptions{
+					Args: []any{
+						getString(obj, "apiVersion"),
+						getString(obj, "metadata", "name"),
+						getString(obj, "metadata", "namespace"),
+						getString(obj, "metadata", "creationTimestamp"),
+						getString(obj, "kind"),
+						getString(obj, "metadata", "resourceVersion"),
+						getString(obj, "metadata", "uid"),
+						string(jsonResource),
+					},
+				})
 			if err != nil {
 				args.FatalErrorChannel <- err
 				return

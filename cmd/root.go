@@ -111,7 +111,7 @@ func runArgs(args config.Arguments) {
 	fmt.Println("per RunUIWithContext")
 
 	go func() {
-		ui.RunUIWithContext(ctx, args, pool)
+		ui.RunUIWithContext(ctx, args)
 	}()
 
 	<-ctx.Done()
