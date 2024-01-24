@@ -179,7 +179,7 @@ func HandleStoreChannel(ctx context.Context, args *config.Arguments) {
 				args.FatalErrorChannel <- err
 				return
 			}
-			_, err = args.Db.Exec(`
+			_, err = args.Pool.Exec(`
 	INSERT INTO res (
 		apiVersion,
 		name,

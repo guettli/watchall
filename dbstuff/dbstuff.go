@@ -1,10 +1,14 @@
 package dbstuff
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
+
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
 )
 
 func GetDBFile(configHost string) (host, dbFilename string) {
@@ -13,22 +17,26 @@ func GetDBFile(configHost string) (host, dbFilename string) {
 	return host, dbFilename
 }
 
-func GetDB(configHost string) (db *sql.DB, host string, err error) {
+func GetPool(ctx context.Context, configHost string) (pool *sqlitex.Pool, host string, err error) {
 	host, fn := GetDBFile(configHost)
-	db, err = sql.Open("sqlite", fn)
+	pool, err = sqlitex.NewPool(fn, sqlitex.PoolOptions{})
 	if err != nil {
 		return nil, "", err
 	}
-	err = migrateDatabase(db)
+	err = migrateDatabase(ctx, pool)
 	if err != nil {
 		return nil, "", err
 	}
-	return db, host, nil
+	return pool, host, nil
 }
 
-func migrateDatabase(db *sql.DB) error {
-	v := 0
-	err := db.QueryRow("pragma user_version").Scan(&v)
+func migrateDatabase(ctx context.Context, pool *sqlitex.Pool) error {
+	vStr, err := QueryText(ctx, pool, "pragma user_version", []any{})
+	if err != nil {
+		return err
+	}
+
+	v, err := strconv.ParseInt(vStr, 10, 64)
 	if err != nil {
 		return err
 	}
@@ -36,7 +44,7 @@ func migrateDatabase(db *sql.DB) error {
 		var err error
 		switch v {
 		case 0:
-			err = migrationToSchema0(db)
+			err = migrationToSchema0(ctx, pool)
 		default:
 			panic(fmt.Sprintf("I am confused. No matching schema migration found. %d", v))
 		}
@@ -64,24 +72,22 @@ type RowScanner interface {
 	Scan(dest ...any) error
 }
 
-func ResourceNewFromRow(scanner RowScanner) (Resource, error) {
+func ResourceNewFromRow(stmt *sqlite.Stmt) Resource {
 	var res Resource
-	var timestamp string
-	var creationTimestamp string
-	err := scanner.Scan(&res.Id, &timestamp, &res.ApiVersion, &res.Name, &res.Namespace, &creationTimestamp, &res.Kind,
-		&res.ResourceVersion, &res.Uid, &res.Json)
-	if err != nil {
-		return res, err
-	}
-	res.Timestamp, err = time.Parse("2006-01-02 15:04:05.9999999", timestamp)
-	if err != nil {
-		return res, err
-	}
-	res.CreationTimestamp, err = time.Parse("2006-01-02T15:04:05Z", creationTimestamp)
-	return res, err
+	res.Id = stmt.ColumnInt64(0)
+	res.Timestamp = time.UnixMicro(stmt.ColumnInt64(1))
+	res.ApiVersion = stmt.ColumnText(2)
+	res.Name = stmt.ColumnText(3)
+	res.Namespace = stmt.ColumnText(4)
+	res.CreationTimestamp = time.UnixMicro(stmt.ColumnInt64(5))
+	res.Kind = stmt.ColumnText(6)
+	res.ResourceVersion = stmt.ColumnText(7)
+	res.Uid = stmt.ColumnText(8)
+	res.Json = stmt.ColumnText(9)
+	return res
 }
 
-func migrationToSchema0(db *sql.DB) error {
+func migrationToSchema0(ctx context.Context, pool sqlitex.Pool) error {
 	_, err := db.Exec(`
 	BEGIN;
 	CREATE TABLE res (
@@ -106,4 +112,30 @@ func migrationToSchema0(db *sql.DB) error {
 		COMMIT;
 		`)
 	return err
+}
+
+func Query(ctx context.Context, pool *sqlitex.Pool, query string, opts *sqlitex.ExecOptions) error {
+	conn := pool.Get(ctx)
+	defer pool.Put(conn)
+	return sqlitex.Execute(conn, query, opts)
+}
+
+func QueryText(ctx context.Context, pool *sqlitex.Pool, query string, queryArgs []any) (string, error) {
+	var text string
+	err := Query(ctx, pool, query, &sqlitex.ExecOptions{
+		Args: queryArgs,
+		ResultFunc: func(stmt *sqlite.Stmt) error {
+			t, err := sqlitex.ResultText(stmt)
+			text = t
+			if err != nil {
+				return err
+			}
+			return nil
+		},
+	},
+	)
+	if err != nil {
+		return text, err
+	}
+	return text, nil
 }

@@ -49,22 +49,27 @@ func runArgs(args config.Arguments) {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
-	db, host, err := dbstuff.GetDB(config.Host)
+
+	ctx := context.Background()
+
+	pool, host, err := dbstuff.GetPool(ctx, config.Host)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 
 	defer func() {
-		db.Close()
-		fmt.Println("db was closed.")
+		if err := pool.Close(); err != nil {
+			fmt.Println(err.Error())
+			os.Exit(1)
+		}
 	}()
 
-	args.Db = db
+	args.Pool = pool
 	args.FatalErrorChannel = make(chan error)
 	args.StoreChannel = make(chan *unstructured.Unstructured)
 
-	ctx, cancelFunc := context.WithCancelCause(context.Background())
+	ctx, cancelFunc := context.WithCancelCause(ctx)
 	args.CancelFunc = cancelFunc
 
 	go func() {
@@ -106,7 +111,7 @@ func runArgs(args config.Arguments) {
 	fmt.Println("per RunUIWithContext")
 
 	go func() {
-		ui.RunUIWithContext(ctx, args, db)
+		ui.RunUIWithContext(ctx, args, pool)
 	}()
 
 	<-ctx.Done()
