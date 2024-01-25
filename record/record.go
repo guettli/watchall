@@ -180,8 +180,18 @@ func HandleStoreChannel(ctx context.Context, args *config.Arguments) {
 				args.FatalErrorChannel <- err
 				return
 			}
+
+			ct := getString(obj, "metadata", "creationTimestamp")
+			t, err := time.Parse(time.RFC3339, ct)
+			if err != nil {
+				args.FatalErrorChannel <- fmt.Errorf("Failed to parse creationTimestamp %q: %w", ct, err)
+				return
+			}
+			creationTimeMicroSeconds := t.UnixMicro()
+
 			err = dbstuff.Query(ctx, args.Pool, `
 	INSERT INTO res (
+		timestamp,
 		apiVersion,
 		name,
 		namespace,
@@ -190,13 +200,14 @@ func HandleStoreChannel(ctx context.Context, args *config.Arguments) {
 		resourceVersion,
 		uid,
 		json)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				&sqlitex.ExecOptions{
 					Args: []any{
+						time.Now().UnixMicro(),
 						getString(obj, "apiVersion"),
 						getString(obj, "metadata", "name"),
 						getString(obj, "metadata", "namespace"),
-						getString(obj, "metadata", "creationTimestamp"),
+						creationTimeMicroSeconds,
 						getString(obj, "kind"),
 						getString(obj, "metadata", "resourceVersion"),
 						getString(obj, "metadata", "uid"),

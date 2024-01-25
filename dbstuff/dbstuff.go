@@ -85,11 +85,11 @@ func migrationToSchema0(ctx context.Context, pool *sqlitex.Pool) error {
 	return sqlitex.ExecScript(conn, `
 	CREATE TABLE res (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		timestamp TEXT DEFAULT(STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')),
+		timestamp INTEGER,
 		apiVersion TEXT,
 		name TEXT,
 		namespace TEXT,
-		creationTimestamp TEXT,
+		creationTimestamp INTEGER,
 		kind TEXT,
 		resourceVersion TEXT,
 		uid TEXT,
