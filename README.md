@@ -49,6 +49,7 @@ If you are interested how resources change over time, use the `deltas` sub-comma
 
 ```text
 ❯ go run github.com/guettli/watchall@latest deltas -h
+
 This reads the files from the local disk and shows the changes. No connection to a cluster is needed.
 
 Usage:
@@ -56,6 +57,7 @@ Usage:
 
 Flags:
   -h, --help           help for deltas
+      --only strings   comma separated list of regex patterns to show
       --skip strings   comma separated list of regex patterns to skip
 
 Global Flags:

@@ -30,7 +30,7 @@ func (f fileType) String() string {
 	return filepath.Join(f.path, f.basename)
 }
 
-func Deltas(baseDir string, skipPatterns []string) error {
+func Deltas(baseDir string, skipPatterns, onlyPatterns []string) error {
 	baseDir = filepath.Clean(baseDir)
 	skipRegex := make([]*regexp.Regexp, 0, len(skipPatterns))
 	for _, pattern := range skipPatterns {
@@ -39,6 +39,15 @@ func Deltas(baseDir string, skipPatterns []string) error {
 			return fmt.Errorf("regexp.Compile() failed: %q %w", pattern, err)
 		}
 		skipRegex = append(skipRegex, r)
+	}
+
+	onlyRegex := make([]*regexp.Regexp, 0, len(onlyPatterns))
+	for _, pattern := range onlyPatterns {
+		r, err := regexp.Compile(pattern)
+		if err != nil {
+			return fmt.Errorf("regexp.Compile() failed: %q %w", pattern, err)
+		}
+		onlyRegex = append(onlyRegex, r)
 	}
 	records, err := filepath.Glob(filepath.Join(baseDir, "record-*"))
 	if err != nil {
@@ -63,10 +72,8 @@ func Deltas(baseDir string, skipPatterns []string) error {
 		if info.Name() < startTimestamp {
 			return nil
 		}
-		for _, r := range skipRegex {
-			if r.MatchString(path) {
-				return nil
-			}
+		if doSkip(skipRegex, onlyRegex, path) {
+			return nil
 		}
 		p, err := filepath.Rel(baseDir, filepath.Dir(path))
 		if err != nil {
@@ -92,6 +99,23 @@ func Deltas(baseDir string, skipPatterns []string) error {
 		}
 	}
 	return nil
+}
+
+func doSkip(skipRegex, onlyRegex []*regexp.Regexp, path string) bool {
+	if len(onlyRegex) > 0 {
+		for _, r := range onlyRegex {
+			if r.MatchString(path) {
+				return false
+			}
+		}
+		return true
+	}
+	for _, r := range skipRegex {
+		if r.MatchString(path) {
+			return true
+		}
+	}
+	return false
 }
 
 func showFile(baseDir string, file fileType, startTimestamp string) error {

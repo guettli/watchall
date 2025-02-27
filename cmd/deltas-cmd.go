@@ -12,14 +12,18 @@ var deltasCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dir := args[0]
-		return deltas.Deltas(dir, skipPatterns)
+		return deltas.Deltas(dir, skipPatterns, onlyPatterns)
 	},
 	SilenceUsage: true,
 }
 
-var skipPatterns []string
+var (
+	skipPatterns []string
+	onlyPatterns []string
+)
 
 func init() {
 	rootCmd.AddCommand(deltasCmd)
 	deltasCmd.Flags().StringSliceVar(&skipPatterns, "skip", []string{}, "comma separated list of regex patterns to skip")
+	deltasCmd.Flags().StringSliceVar(&onlyPatterns, "only", []string{}, "comma separated list of regex patterns to show")
 }
