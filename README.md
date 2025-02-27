@@ -135,3 +135,7 @@ Every time you start `record` a new record-TIMESTAMP file gets created. When you
 the last changes get shown.
 
 TODO: Command line argument to define custom starttimestamps, or make the user choose one.
+
+## Related
+
+[guettli/check-conditions: Check Conditions of all Kubernets Resources](https://github.com/guettli/check-conditions)
