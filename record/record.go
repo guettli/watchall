@@ -171,7 +171,7 @@ func storeResource(args *Arguments, group string, kind string, obj *unstructured
 	}
 	ns := getString(obj, "metadata", "namespace")
 	dir := filepath.Join(args.OutputDirectory, host, group, kind, ns, name)
-	err = os.MkdirAll(dir, 0o777)
+	err = os.MkdirAll(dir, 0o700)
 	if err != nil {
 		return fmt.Errorf("os.MkdirAll() failed: %w", err)
 	}
