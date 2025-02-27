@@ -50,7 +50,7 @@ func Deltas(baseDir string, skipPatterns []string) error {
 	slices.Sort(records)
 	record := records[len(records)-1]
 	startTimestamp := strings.SplitN(filepath.Base(record), "-", 2)[1]
-
+	fmt.Printf("Using %q as start timestamp\n", record)
 	var files []fileType
 
 	err = filepath.WalkDir(baseDir, func(path string, info os.DirEntry, err error) error {
