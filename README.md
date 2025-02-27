@@ -43,7 +43,7 @@ watchall-output/127.0.0.1:41209/ConfigMap/kube-node-lease/kube-root-ca.crt/20250
 
 As soon as a resource gets changed, the tool creates a new file with a new timestamp.
 
-## Deltas
+## Step 2: Show Deltas
 
 If you are interested how resources change over time, use the `deltas` sub-command:
 
