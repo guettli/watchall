@@ -21,6 +21,8 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+const TimeFormat = "20060102-150405.00000"
+
 type Arguments struct {
 	Verbose         bool
 	OutputDirectory string
@@ -64,6 +66,13 @@ func RunRecordWithContext(ctx context.Context, args Arguments, kubeconfig client
 
 func createRecorders(ctx context.Context, serverResources []*metav1.APIResourceList, args Arguments, dynClient *dynamic.DynamicClient, host string) (*sync.WaitGroup, error) {
 	var wg sync.WaitGroup
+
+	recordFile := filepath.Join(args.OutputDirectory, "record-"+time.Now().Format(TimeFormat))
+
+	err := os.WriteFile(recordFile, []byte(""), 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("os.WriteFile() failed %q: %w", recordFile, err)
+	}
 
 	for _, resourceList := range serverResources {
 		groupVersion, err := schema.ParseGroupVersion(resourceList.GroupVersion)
@@ -175,7 +184,7 @@ func storeResource(args *Arguments, group string, kind string, obj *unstructured
 	if err != nil {
 		return fmt.Errorf("os.MkdirAll() failed: %w", err)
 	}
-	file := filepath.Join(dir, time.Now().Format("20060102-150405.000")+".yaml")
+	file := filepath.Join(dir, time.Now().Format(TimeFormat)+".yaml")
 	if err := os.WriteFile(file, bytes, 0o600); err != nil {
 		return fmt.Errorf("os.WriteFile() failed: %w", err)
 	}
