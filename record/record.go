@@ -22,10 +22,6 @@ import (
 )
 
 func RunRecordWithContext(ctx context.Context, args config.Arguments, config *restclient.Config, host string) error {
-	// This might increase performance, but we do that many api-calls at the moment.
-	// config.QPS = 1000
-	// config.Burst = 1000
-
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return err

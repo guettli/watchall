@@ -50,6 +50,10 @@ func runArgs(args config.Arguments) {
 		os.Exit(1)
 	}
 
+	// QPS and Burst are set to -1 to disable throttling.
+	config.QPS = -1
+	config.Burst = -1
+
 	ctx := context.Background()
 
 	pool, host, err := dbstuff.GetPool(ctx, config.Host)
@@ -134,9 +138,5 @@ func handleFatalErrorChannel(ctx context.Context, args *config.Arguments) {
 }
 
 func init() {
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
 	rootCmd.PersistentFlags().BoolVarP(&arguments.Verbose, "verbose", "v", false, "Create more output")
 }
