@@ -147,7 +147,7 @@ func handleEvent(args *Arguments, gvr schema.GroupVersionResource, event watch.E
 	}
 	switch event.Type {
 	case watch.Modified, watch.Added, watch.Deleted, watch.Bookmark, watch.Error:
-		fmt.Printf("%s %s %s %s/%s\n", event.Type, gvk.Kind, gvk.Group,
+		fmt.Printf("%s %s %s/%s\n", event.Type, gvk.Kind,
 			getString(obj, "metadata", "namespace"),
 			getString(obj, "metadata", "name"),
 		)
