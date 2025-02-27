@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -29,8 +30,16 @@ func (f fileType) String() string {
 	return filepath.Join(f.path, f.basename)
 }
 
-func Deltas(dir string) error {
+func Deltas(dir string, skipPatterns []string) error {
 	dir = filepath.Clean(dir)
+	skipRegex := make([]*regexp.Regexp, 0, len(skipPatterns))
+	for _, pattern := range skipPatterns {
+		r, err := regexp.Compile(pattern)
+		if err != nil {
+			return fmt.Errorf("regexp.Compile() failed: %q %w", pattern, err)
+		}
+		skipRegex = append(skipRegex, r)
+	}
 	records, err := filepath.Glob(filepath.Join(dir, "record-*"))
 	if err != nil {
 		return fmt.Errorf("os.Glob() failed: %w", err)
@@ -53,6 +62,11 @@ func Deltas(dir string) error {
 		}
 		if info.Name() < startTimestamp {
 			return nil
+		}
+		for _, r := range skipRegex {
+			if r.MatchString(path) {
+				return nil
+			}
 		}
 		p, err := filepath.Rel(dir, filepath.Dir(path))
 		if err != nil {
@@ -122,7 +136,7 @@ func showFile(dir string, file fileType, startTimestamp string) error {
 		return nil
 	}
 	if previous < startTimestamp {
-		fmt.Printf("Skipping because before %s %s\n", startTimestamp, previous)
+		// fmt.Printf("Skipping because before %s %s\n", startTimestamp, previous)
 		return nil
 	}
 	compareTwoYamlFiles(filepath.Join(absDir, previous), filepath.Join(absDir, file.basename))
