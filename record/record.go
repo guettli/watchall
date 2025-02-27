@@ -67,9 +67,14 @@ func RunRecordWithContext(ctx context.Context, args Arguments, kubeconfig client
 func createRecorders(ctx context.Context, serverResources []*metav1.APIResourceList, args Arguments, dynClient *dynamic.DynamicClient, host string) (*sync.WaitGroup, error) {
 	var wg sync.WaitGroup
 
-	recordFile := filepath.Join(args.OutputDirectory, host, "record-"+time.Now().Format(TimeFormat))
+	baseDir := filepath.Join(args.OutputDirectory, host)
+	err := os.MkdirAll(baseDir, 0o700)
+	if err != nil {
+		return &wg, fmt.Errorf("os.MkdirAll() failed: %w", err)
+	}
+	recordFile := filepath.Join(baseDir, "record-"+time.Now().Format(TimeFormat))
 
-	err := os.WriteFile(recordFile, []byte(""), 0o600)
+	err = os.WriteFile(recordFile, []byte(""), 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("os.WriteFile() failed %q: %w", recordFile, err)
 	}
