@@ -5,21 +5,19 @@ import (
 	"io"
 	"os"
 
+	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-
-	"github.com/guettli/watchall/record"
-	"github.com/spf13/cobra"
 )
 
 var logsCmd = &cobra.Command{
 	Use:   "logs",
 	Short: "Check all logs of all pods",
 	Long:  `...`,
-	Run: func(cmd *cobra.Command, args []string) {
-		runLogs(arguments)
+	Run: func(_ *cobra.Command, _ []string) {
+		runLogs()
 	},
 }
 
@@ -27,7 +25,8 @@ func init() {
 	rootCmd.AddCommand(logsCmd)
 }
 
-func runLogs(args record.Arguments) {
+func runLogs() {
+	ctx := context.Background()
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	configOverrides := &clientcmd.ConfigOverrides{}
 	kubeconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
@@ -46,7 +45,7 @@ func runLogs(args record.Arguments) {
 	}
 
 	// List all pods
-	pods, err := clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{})
+	pods, err := clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		panic(err.Error())
 	}
@@ -57,7 +56,7 @@ func runLogs(args record.Arguments) {
 				Container: container.Name,
 			})
 
-			podLogs, err := req.Stream(context.TODO())
+			podLogs, err := req.Stream(ctx)
 			if err != nil {
 				panic(err.Error())
 			}

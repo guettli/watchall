@@ -14,7 +14,7 @@ var recordCmd = &cobra.Command{
 	Use:   "record",
 	Short: "record all changes to resource objects",
 	Long:  `...`,
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, _ []string) {
 		runRecord(arguments)
 	},
 }
@@ -27,6 +27,7 @@ func runRecord(args record.Arguments) {
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	configOverrides := &clientcmd.ConfigOverrides{}
 	kubeconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
+
 	wg, err := record.RunRecordWithContext(context.Background(), args, kubeconfig)
 	if err != nil {
 		fmt.Println(err.Error())

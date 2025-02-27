@@ -10,8 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"sigs.k8s.io/yaml"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -20,6 +18,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/yaml"
 )
 
 type Arguments struct {
@@ -30,21 +29,20 @@ type Arguments struct {
 func RunRecordWithContext(ctx context.Context, args Arguments, kubeconfig clientcmd.ClientConfig) (*sync.WaitGroup, error) {
 	config, err := kubeconfig.ClientConfig()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("kubeconfig.ClientConfig() failed: %w", err)
 	}
 
-	// This might increase performance, but we do that many api-calls at the moment.
-	//config.QPS = 1000
-	//config.Burst = 1000
+	config.QPS = -1
+	config.Burst = -1
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("kubernetes.NewForConfig() failed: %w", err)
 	}
 
 	dynClient, err := dynamic.NewForConfig(config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("dynamic.NewForConfig() failed: %w", err)
 	}
 
 	discoveryClient := clientset.Discovery()
@@ -56,15 +54,17 @@ func RunRecordWithContext(ctx context.Context, args Arguments, kubeconfig client
 			fmt.Printf("WARNING: The Kubernetes server has an orphaned API service. Server reports: %s\n", err.Error())
 			fmt.Printf("WARNING: To fix this, kubectl delete apiservice <service-name>\n")
 		} else {
-			return nil, err
+			return nil, fmt.Errorf("discoveryClient.ServerPreferredResources() failed: %w", err)
 		}
 	}
 	host := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(config.Host, "https://"), "http://"), ":443")
-	return createRecorders(context.TODO(), serverResources, args, dynClient, host)
+
+	return createRecorders(ctx, serverResources, args, dynClient, host)
 }
 
 func createRecorders(ctx context.Context, serverResources []*metav1.APIResourceList, args Arguments, dynClient *dynamic.DynamicClient, host string) (*sync.WaitGroup, error) {
 	var wg sync.WaitGroup
+
 	for _, resourceList := range serverResources {
 		groupVersion, err := schema.ParseGroupVersion(resourceList.GroupVersion)
 		if err != nil {
@@ -106,16 +106,16 @@ var resourcesToSkip = []groupResource{
 	{"apiextensions.k8s.io", "customresourcedefinitions"}, //
 }
 
-func watchGVR(ctx context.Context, wg *sync.WaitGroup, args *Arguments, dynClient *dynamic.DynamicClient, gvr schema.GroupVersionResource, host string) error {
+// watchGVR is called as Goroutine. It prints errors.
+func watchGVR(ctx context.Context, wg *sync.WaitGroup, args *Arguments, dynClient *dynamic.DynamicClient, gvr schema.GroupVersionResource, host string) {
 	defer wg.Done()
 	fmt.Printf("Watching %q %q\n", gvr.Group, gvr.Resource)
 
-	// TODO: Use SendInitialEvents to avoid getting the old state.
-	watch, err := dynClient.Resource(gvr).Watch(context.TODO(), metav1.ListOptions{})
+	watch, err := dynClient.Resource(gvr).Watch(ctx, metav1.ListOptions{})
 	if err != nil {
 		fmt.Printf("..Error watching %v. group %q version %q resource %q\n", err,
 			gvr.Group, gvr.Version, gvr.Resource)
-		return err
+		return
 	}
 	defer watch.Stop()
 	for {
@@ -123,51 +123,47 @@ func watchGVR(ctx context.Context, wg *sync.WaitGroup, args *Arguments, dynClien
 		case event, ok := <-watch.ResultChan():
 			if !ok {
 				// If there are not objects in a resource, the watch gets closed.
-				return nil
+				return
 			}
-			handleEvent(args, gvr, event, host)
+			err := handleEvent(args, gvr, event, host)
+			if err != nil {
+				fmt.Printf("Error handling event: %v\n", err)
+			}
 		case <-ctx.Done():
-			return nil
+			return
 		}
 	}
 }
 
-func handleEvent(args *Arguments, gvr schema.GroupVersionResource, event watch.Event, host string) {
+func handleEvent(args *Arguments, gvr schema.GroupVersionResource, event watch.Event, host string) error {
 	if event.Object == nil {
-		fmt.Printf("event.Object is nil? Waiting a moment and skipping this event. Type=%s %+v gvr: (group=%s version=%s resource=%s)\n", event.Type, event,
+		return fmt.Errorf("event.Object is nil? Skipping this event. Type=%s %+v gvr: (group=%s version=%s resource=%s)", event.Type, event,
 			gvr.Group, gvr.Version, gvr.Resource)
-		time.Sleep(10 * time.Second)
-		return
 	}
 	gvk := event.Object.GetObjectKind().GroupVersionKind()
 	obj, ok := event.Object.(*unstructured.Unstructured)
 	if !ok {
-		fmt.Printf("Internal Error, could not cast to Unstructered %T %+v\n", event.Object, event.Object)
-		return
+		return fmt.Errorf("internal Error, could not cast to Unstructered %T %+v", event.Object, event.Object)
 	}
 	switch event.Type {
-	case watch.Added:
-		fmt.Printf("%s %s %s\n", event.Type, gvk.Kind, gvk.Group)
-		storeResource(args, gvk.Group, gvk.Version, gvk.Kind, obj, host)
-	case watch.Modified:
-		//json, _ := obj.MarshalJSON()
-		fmt.Printf("%s %s %s %q\n", event.Type, gvk.Kind, gvk.Group, getString(obj, "metadata", "name"))
-		storeResource(args, gvk.Group, gvk.Version, gvk.Kind, obj, host)
-	case watch.Deleted:
-		fmt.Printf("%s %+v %s\n", event.Type, gvk, event.Object)
-	case watch.Bookmark:
-		fmt.Printf("%s %+v %s\n", event.Type, gvk, event.Object)
-	case watch.Error:
-		fmt.Printf("%s %+v %s\n", event.Type, gvk, event.Object)
+	case watch.Modified, watch.Added, watch.Deleted, watch.Bookmark, watch.Error:
+		fmt.Printf("%s %s %s %s/%s\n", event.Type, gvk.Kind, gvk.Group,
+			getString(obj, "metadata", "namespace"),
+			getString(obj, "metadata", "name"),
+		)
+		if err := storeResource(args, gvk.Group, gvk.Kind, obj, host); err != nil {
+			return fmt.Errorf("error storing resource: %w", err)
+		}
 	default:
 		fmt.Printf("Internal Error, unknown event %s %+v %s\n", event.Type, gvk, event.Object)
 	}
+	return nil
 }
 
-func storeResource(args *Arguments, group string, version string, kind string, obj *unstructured.Unstructured, host string) error {
+func storeResource(args *Arguments, group string, kind string, obj *unstructured.Unstructured, host string) error {
 	bytes, err := yaml.Marshal(obj)
 	if err != nil {
-		return err
+		return fmt.Errorf("yaml.Marshal(obj) failed: %w", err)
 	}
 	name := getString(obj, "metadata", "name")
 	if name == "" {
@@ -175,13 +171,15 @@ func storeResource(args *Arguments, group string, version string, kind string, o
 	}
 	ns := getString(obj, "metadata", "namespace")
 	dir := filepath.Join(args.OutputDirectory, host, group, kind, ns, name)
-	err = os.MkdirAll(dir, 0777)
+	err = os.MkdirAll(dir, 0o777)
 	if err != nil {
-		return err
+		return fmt.Errorf("os.MkdirAll() failed: %w", err)
 	}
 	file := filepath.Join(dir, time.Now().Format("20060102-150405.000")+".yaml")
-	return os.WriteFile(file, bytes, 0666)
-
+	if err := os.WriteFile(file, bytes, 0o600); err != nil {
+		return fmt.Errorf("os.WriteFile() failed: %w", err)
+	}
+	return nil
 }
 
 func getString(obj *unstructured.Unstructured, fields ...string) string {
