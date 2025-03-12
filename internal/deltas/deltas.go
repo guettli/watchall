@@ -249,5 +249,6 @@ func stripIrrelevantFields(obj *unstructured.Unstructured) error {
 	// Remove metadata fields that are not relevant
 	unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
 	unstructured.RemoveNestedField(obj.Object, "metadata", "annotations", "kubectl.kubernetes.io/last-applied-configuration")
+	unstructured.RemoveNestedField(obj.Object, "metadata", "resourceVersion")
 	return nil
 }
