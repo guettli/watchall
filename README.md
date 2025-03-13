@@ -138,6 +138,10 @@ the last changes get shown.
 
 TODO: Command line argument to define custom starttimestamps, or make the user choose one.
 
+## Usage
+
+[Usage](https://github.com/guettli/watchall/blob/main/usage.md)
+
 ## Related
 
 [guettli/check-conditions: Check Conditions of all Kubernets Resources](https://github.com/guettli/check-conditions)

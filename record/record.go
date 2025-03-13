@@ -186,7 +186,10 @@ func redactSecret(obj *unstructured.Unstructured) {
 			}
 			m[k] = fmt.Sprintf("redacted-to-sha256:%x", sha256.Sum256([]byte(v)))
 		}
-		unstructured.SetNestedStringMap(obj.Object, m, key)
+		err = unstructured.SetNestedStringMap(obj.Object, m, key)
+		if err != nil {
+			continue
+		}
 	}
 }
 

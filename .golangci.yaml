@@ -13,6 +13,8 @@ linters:
     - forbidigo
     - gochecknoglobals
     - varnamelen
+    - funlen
+    - cyclop
 linters-settings:
   cyclop:
     max-complexity: 15

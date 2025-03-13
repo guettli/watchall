@@ -5,6 +5,7 @@ go 1.23.0
 toolchain go1.23.3
 
 require (
+	github.com/gavv/cobradoc v1.1.0
 	github.com/spf13/cobra v1.7.0
 	k8s.io/api v0.32.2
 	k8s.io/apimachinery v0.32.2

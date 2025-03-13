@@ -10,7 +10,7 @@ var deltasCmd = &cobra.Command{
 	Short: "show the deltas (changes) of resource objects",
 	Long:  `This reads the files from the local disk and shows the changes. No connection to a cluster is needed.`,
 	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		dir := args[0]
 		return deltas.Deltas(dir, skipPatterns, onlyPatterns)
 	},
@@ -23,7 +23,7 @@ var (
 )
 
 func init() {
-	rootCmd.AddCommand(deltasCmd)
+	RootCmd.AddCommand(deltasCmd)
 	deltasCmd.Flags().StringSliceVar(&skipPatterns, "skip", []string{}, "comma separated list of regex patterns to skip")
 	deltasCmd.Flags().StringSliceVar(&onlyPatterns, "only", []string{}, "comma separated list of regex patterns to show")
 }

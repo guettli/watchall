@@ -9,8 +9,10 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/akedrou/textdiff"
+	"github.com/guettli/watchall/record"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
@@ -18,7 +20,7 @@ import (
 )
 
 var resourcesToSkip = []string{
-	//"events.k8s.io/Event", // events do not get updated. No need to show a delta.
+	// "events.k8s.io/Event", // events do not get updated. No need to show a delta.
 }
 
 type fileType struct {
@@ -54,7 +56,7 @@ func Deltas(baseDir string, skipPatterns, onlyPatterns []string) error {
 		return fmt.Errorf("os.Glob() failed: %w", err)
 	}
 	if len(records) == 0 {
-		return fmt.Errorf("No record-YYYYMM... file found in %s", baseDir)
+		return fmt.Errorf("no record-YYYYMM... file found in %s", baseDir)
 	}
 	slices.Sort(records)
 	record := records[len(records)-1]
@@ -63,6 +65,9 @@ func Deltas(baseDir string, skipPatterns, onlyPatterns []string) error {
 	var files []fileType
 
 	err = filepath.WalkDir(baseDir, func(path string, info os.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("filepath.WalkDir() failed: %w", err)
+		}
 		if info.IsDir() {
 			return nil
 		}
@@ -93,7 +98,7 @@ func Deltas(baseDir string, skipPatterns, onlyPatterns []string) error {
 		return files[i].basename < files[j].basename
 	})
 	for _, file := range files {
-		err := showFile(baseDir, file, startTimestamp)
+		err := showFile(baseDir, file, startTimestamp, true)
 		if err != nil {
 			return fmt.Errorf("showFile() failed: %w", err)
 		}
@@ -118,7 +123,11 @@ func doSkip(skipRegex, onlyRegex []*regexp.Regexp, path string) bool {
 	return false
 }
 
-func showFile(baseDir string, file fileType, startTimestamp string) error {
+func showFile(baseDir string, file fileType, startTimestamp string, showInitialYaml bool) error {
+	if file.basename < startTimestamp {
+		// fmt.Printf("Skipping %q because before %s %s\n", file.String(), startTimestamp, previous)
+		return nil
+	}
 	for _, resource := range resourcesToSkip {
 		if strings.HasPrefix(file.path, resource+string(filepath.Separator)) {
 			// fmt.Printf("Skipping %s\n", file.String())
@@ -155,15 +164,16 @@ func showFile(baseDir string, file fileType, startTimestamp string) error {
 		return fmt.Errorf("internal error. Not found: %q %s", file.path, file.basename)
 	}
 	if previous == "" {
-		// fmt.Printf("No previous file found: %s\n", file.String())
+		if showInitialYaml {
+			content, err := os.ReadFile(filepath.Join(absDir, file.basename))
+			if err != nil {
+				return fmt.Errorf("os.ReadFile() failed: %w", err)
+			}
+			fmt.Printf("Initial YAML: %s\n%s", file.String(), string(content))
+		}
 		return nil
 	}
-	if previous < startTimestamp {
-		// fmt.Printf("Skipping %q because before %s %s\n", file.String(), startTimestamp, previous)
-		return nil
-	}
-	compareTwoYamlFiles(baseDir, filepath.Join(absDir, previous), filepath.Join(absDir, file.basename))
-	return nil
+	return compareTwoYamlFiles(baseDir, filepath.Join(absDir, previous), filepath.Join(absDir, file.basename))
 }
 
 func compareTwoYamlFiles(baseDir, f1, f2 string) error {
@@ -189,12 +199,8 @@ func compareTwoYamlFiles(baseDir, f1, f2 string) error {
 	}
 
 	// Strip irrelevant fields (like resourceVersion)
-	if err := stripIrrelevantFields(obj1); err != nil {
-		return fmt.Errorf("stripIrrelevantFields failed %q: %w", f1, err)
-	}
-	if err := stripIrrelevantFields(obj2); err != nil {
-		return fmt.Errorf("stripIrrelevantFields failed %q: %w", f2, err)
-	}
+	stripIrrelevantFields(obj1)
+	stripIrrelevantFields(obj2)
 
 	// Compare the objects
 	if equality.Semantic.DeepEqual(obj1, obj2) {
@@ -215,8 +221,27 @@ func compareTwoYamlFiles(baseDir, f1, f2 string) error {
 	if err != nil {
 		return fmt.Errorf("filepath.Rel() failed: %w", err)
 	}
-	fmt.Printf("Diff of %q %q\n%s\n\n", p, filepath.Base(f2), diff)
+	time1, err := baseNameToTimestamp(filepath.Base(f1))
+	if err != nil {
+		return fmt.Errorf("baseNameToTimestamp failed: %w", err)
+	}
+	time2, err := baseNameToTimestamp(filepath.Base(f2))
+	if err != nil {
+		return fmt.Errorf("baseNameToTimestamp failed: %w", err)
+	}
+	d := time2.Sub(time1)
+	fmt.Printf("Diff of %q %q (%s)\n%s\n\n", p, filepath.Base(f2),
+		d.Truncate(time.Second).String(), diff)
 	return nil
+}
+
+func baseNameToTimestamp(baseName string) (time.Time, error) {
+	baseName = strings.TrimSuffix(baseName, ".yaml")
+	t, err := time.Parse(record.TimeFormat, baseName)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("time.Parse() format=%s failed: %w", record.TimeFormat, err)
+	}
+	return t, nil
 }
 
 func unstructuredToString(obj *unstructured.Unstructured) (string, error) {
@@ -245,11 +270,10 @@ func yamlToUnstructured(yamlData []byte) (*unstructured.Unstructured, error) {
 	return obj, nil
 }
 
-func stripIrrelevantFields(obj *unstructured.Unstructured) error {
+func stripIrrelevantFields(obj *unstructured.Unstructured) {
 	// Remove metadata fields that are not relevant
 	unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
 	unstructured.RemoveNestedField(obj.Object, "metadata", "annotations", "kubectl.kubernetes.io/last-applied-configuration")
 	unstructured.RemoveNestedField(obj.Object, "metadata", "resourceVersion")
 	unstructured.RemoveNestedField(obj.Object, "metadata", "generation")
-	return nil
 }

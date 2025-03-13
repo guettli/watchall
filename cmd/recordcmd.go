@@ -20,7 +20,7 @@ var recordCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(recordCmd)
+	RootCmd.AddCommand(recordCmd)
 }
 
 func runRecord(args record.Arguments) {
