@@ -169,7 +169,16 @@ func showFile(baseDir string, file fileType, startTimestamp string, showInitialY
 			if err != nil {
 				return fmt.Errorf("os.ReadFile() failed: %w", err)
 			}
-			fmt.Printf("Initial YAML: %s\n%s", file.String(), string(content))
+			obj, err := yamlToUnstructured(content)
+			if err != nil {
+				return fmt.Errorf("failed to decode first YAML: %w", err)
+			}
+			stripIrrelevantFields(obj)
+			s, err := unstructuredToString(obj)
+			if err != nil {
+				return fmt.Errorf("unstructuredToString failed %q: %w", file.basename, err)
+			}
+			fmt.Printf("\nInitial YAML: %s\n%s", file.String(), s)
 		}
 		return nil
 	}
@@ -230,7 +239,7 @@ func compareTwoYamlFiles(baseDir, f1, f2 string) error {
 		return fmt.Errorf("baseNameToTimestamp failed: %w", err)
 	}
 	d := time2.Sub(time1)
-	fmt.Printf("Diff of %q %q (%s)\n%s\n\n", p, filepath.Base(f2),
+	fmt.Printf("\nDiff of %q %q (%s)\n%s\n\n", p, filepath.Base(f2),
 		d.Truncate(time.Second).String(), diff)
 	return nil
 }
@@ -276,4 +285,5 @@ func stripIrrelevantFields(obj *unstructured.Unstructured) {
 	unstructured.RemoveNestedField(obj.Object, "metadata", "annotations", "kubectl.kubernetes.io/last-applied-configuration")
 	unstructured.RemoveNestedField(obj.Object, "metadata", "resourceVersion")
 	unstructured.RemoveNestedField(obj.Object, "metadata", "generation")
+	unstructured.RemoveNestedField(obj.Object, "metadata", "uid")
 }
