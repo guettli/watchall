@@ -18,7 +18,7 @@ import (
 )
 
 var resourcesToSkip = []string{
-	"events.k8s.io/Event", // events do not get updated. No need to show a delta.
+	//"events.k8s.io/Event", // events do not get updated. No need to show a delta.
 }
 
 type fileType struct {
@@ -250,5 +250,6 @@ func stripIrrelevantFields(obj *unstructured.Unstructured) error {
 	unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
 	unstructured.RemoveNestedField(obj.Object, "metadata", "annotations", "kubectl.kubernetes.io/last-applied-configuration")
 	unstructured.RemoveNestedField(obj.Object, "metadata", "resourceVersion")
+	unstructured.RemoveNestedField(obj.Object, "metadata", "generation")
 	return nil
 }

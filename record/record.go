@@ -2,6 +2,7 @@ package record
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -72,7 +73,7 @@ func createRecorders(ctx context.Context, serverResources []*metav1.APIResourceL
 	if err != nil {
 		return &wg, fmt.Errorf("os.MkdirAll() failed: %w", err)
 	}
-	recordFile := filepath.Join(baseDir, "record-"+time.Now().Format(TimeFormat))
+	recordFile := filepath.Join(baseDir, "record-"+time.Now().UTC().Format(TimeFormat))
 
 	err = os.WriteFile(recordFile, []byte(""), 0o600)
 	if err != nil {
@@ -116,8 +117,7 @@ var resourcesToSkip = []groupResource{
 	{"", "bindings"},
 	{"", "events"}, // exists twice. Second time with group events.k8s.io
 	{"metallb.io", "addresspools"},
-	{"coordination.k8s.io", "leases"},                     // Leases create too many modifications
-	{"apiextensions.k8s.io", "customresourcedefinitions"}, //
+	{"coordination.k8s.io", "leases"}, // Leases create too many modifications
 }
 
 // watchGVR is called as Goroutine. It prints errors.
@@ -174,7 +174,26 @@ func handleEvent(args *Arguments, gvr schema.GroupVersionResource, event watch.E
 	return nil
 }
 
+func redactSecret(obj *unstructured.Unstructured) {
+	for _, key := range []string{"data", "stringData"} {
+		m, found, err := unstructured.NestedStringMap(obj.Object, key)
+		if !found || err != nil {
+			continue
+		}
+		for k, v := range m {
+			if v == "" {
+				continue
+			}
+			m[k] = fmt.Sprintf("redacted-to-sha256:%x", sha256.Sum256([]byte(v)))
+		}
+		unstructured.SetNestedStringMap(obj.Object, m, key)
+	}
+}
+
 func storeResource(args *Arguments, group string, kind string, obj *unstructured.Unstructured, host string) error {
+	if group == "" && kind == "Secret" {
+		redactSecret(obj)
+	}
 	bytes, err := yaml.Marshal(obj)
 	if err != nil {
 		return fmt.Errorf("yaml.Marshal(obj) failed: %w", err)
@@ -189,7 +208,7 @@ func storeResource(args *Arguments, group string, kind string, obj *unstructured
 	if err != nil {
 		return fmt.Errorf("os.MkdirAll() failed: %w", err)
 	}
-	file := filepath.Join(dir, time.Now().Format(TimeFormat)+".yaml")
+	file := filepath.Join(dir, time.Now().UTC().Format(TimeFormat)+".yaml")
 	if err := os.WriteFile(file, bytes, 0o600); err != nil {
 		return fmt.Errorf("os.WriteFile() failed: %w", err)
 	}
