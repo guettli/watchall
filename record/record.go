@@ -1,15 +1,20 @@
 package record
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -24,9 +29,18 @@ import (
 
 const TimeFormat = "20060102-150405.00000"
 
+type IgnoreLogLine struct {
+	FileRegex *regexp.Regexp
+	LineRegex *regexp.Regexp
+}
 type Arguments struct {
-	Verbose         bool
-	OutputDirectory string
+	Verbose                bool
+	OutputDirectory        string
+	WithLogs               bool
+	SkipRecordingResources bool
+	IgnoreLogLinesFile     string
+	IgnoreLogLines         []IgnoreLogLine
+	IgnorePods             []*regexp.Regexp
 }
 
 func RunRecordWithContext(ctx context.Context, args Arguments, kubeconfig clientcmd.ClientConfig) (*sync.WaitGroup, error) {
@@ -61,23 +75,118 @@ func RunRecordWithContext(ctx context.Context, args Arguments, kubeconfig client
 		}
 	}
 	host := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(config.Host, "https://"), "http://"), ":443")
-
-	return createRecorders(ctx, serverResources, args, dynClient, host)
-}
-
-func createRecorders(ctx context.Context, serverResources []*metav1.APIResourceList, args Arguments, dynClient *dynamic.DynamicClient, host string) (*sync.WaitGroup, error) {
 	var wg sync.WaitGroup
 
+	if !args.SkipRecordingResources {
+		err = createRecorders(ctx, &wg, serverResources, args, dynClient, host)
+		if err != nil {
+			return nil, fmt.Errorf("createRecorders() failed: %w", err)
+		}
+	}
+
+	if args.WithLogs {
+		err = createLogScraper(ctx, &wg, clientset, args, host)
+		if err != nil {
+			return nil, fmt.Errorf("createLogScraper() failed: %w", err)
+		}
+	}
+	return &wg, nil
+}
+
+func createLogScraper(ctx context.Context, wg *sync.WaitGroup,
+	clientset *kubernetes.Clientset, args Arguments, host string,
+) error {
+	pods, err := clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("clientset.CoreV1().Pods().List() failed: %w", err)
+	}
+
+	for _, pod := range pods.Items {
+		skip := false
+		for _, ignorePod := range args.IgnorePods {
+			if ignorePod.MatchString(pod.Name) {
+				fmt.Printf("Skipping pod %s/%s because it matches ignore-pod-regex %q\n", pod.Namespace, pod.Name, ignorePod.String())
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+		var regexOfThisPod []*regexp.Regexp
+		for _, ignoreLine := range args.IgnoreLogLines {
+			if ignoreLine.FileRegex.MatchString(pod.Name) {
+				regexOfThisPod = append(regexOfThisPod, ignoreLine.LineRegex)
+			}
+		}
+		for _, container := range pod.Spec.Containers {
+			wg.Add(1)
+			go readPodLogs(ctx, wg, clientset, args, host, pod.Name, pod.Namespace,
+				container.Name, regexOfThisPod)
+		}
+	}
+	return nil
+}
+
+func readPodLogs(ctx context.Context, wg *sync.WaitGroup, clientset *kubernetes.Clientset, args Arguments, host, podName, namespace, containerName string, ignoreLineRegexs []*regexp.Regexp) {
+	defer wg.Done()
+	fmt.Printf("Watching logs for pod %s/%s container %s\n", namespace, podName, containerName)
+	stream, err := clientset.CoreV1().Pods(namespace).GetLogs(podName,
+		&corev1.PodLogOptions{
+			Container:    containerName,
+			Follow:       true,
+			SinceSeconds: ptr.To(int64(1)),
+		},
+	).Stream(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error streaming logs for %s/%s [%s]: %v\n", namespace, podName, containerName, err)
+		return
+	}
+	defer stream.Close()
+
+	scanner := bufio.NewScanner(stream)
+	for scanner.Scan() {
+		line := scanner.Text()
+		for _, ignoreLineRegex := range ignoreLineRegexs {
+			if ignoreLineRegex.MatchString(line) {
+				fmt.Printf("Ignoring log line for pod %s/%s container %s: %q\n", namespace, podName, containerName, line)
+				continue
+			}
+		}
+		dir := filepath.Join(args.OutputDirectory, host, "core", "Pod", namespace, podName)
+		err = os.MkdirAll(dir, 0o700)
+		if err != nil {
+			fmt.Printf("Error creating directory %s: %s\n", dir, err)
+			continue
+		}
+
+		file := filepath.Join(dir, time.Now().UTC().Format(TimeFormat)+".log")
+
+		if err := os.WriteFile(file, []byte(line+"\n"), 0o600); err != nil {
+			fmt.Printf("Error writing log file %s: %s\n", file, err)
+			continue
+		}
+		fmt.Printf("Created log file %s for pod %s/%s container %s\n", file, namespace, podName, containerName)
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading logs for %s/%s [%s]: %v\n", namespace, podName, containerName, err)
+	}
+}
+
+func createRecorders(ctx context.Context, wg *sync.WaitGroup, serverResources []*metav1.APIResourceList, args Arguments, dynClient *dynamic.DynamicClient, host string) error {
 	baseDir := filepath.Join(args.OutputDirectory, host)
 	err := os.MkdirAll(baseDir, 0o700)
 	if err != nil {
-		return &wg, fmt.Errorf("os.MkdirAll() failed: %w", err)
+		return fmt.Errorf("os.MkdirAll() failed: %w", err)
 	}
+
+	// the recordFile creates a marker file, so that the current time gets recorded.
+	// This is useful to find out when the recording started.
 	recordFile := filepath.Join(baseDir, "record-"+time.Now().UTC().Format(TimeFormat))
 
 	err = os.WriteFile(recordFile, []byte(""), 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("os.WriteFile() failed %q: %w", recordFile, err)
+		return fmt.Errorf("os.WriteFile() failed %q: %w", recordFile, err)
 	}
 
 	for _, resourceList := range serverResources {
@@ -92,14 +201,14 @@ func createRecorders(ctx context.Context, serverResources []*metav1.APIResourceL
 				continue
 			}
 			wg.Add(1)
-			go watchGVR(ctx, &wg, &args, dynClient, schema.GroupVersionResource{
+			go watchGVR(ctx, wg, &args, dynClient, schema.GroupVersionResource{
 				Group:    groupVersion.Group,
 				Version:  groupVersion.Version,
 				Resource: resourceName,
 			}, host)
 		}
 	}
-	return &wg, nil
+	return nil
 }
 
 type groupResource struct {
@@ -206,6 +315,9 @@ func storeResource(args *Arguments, group string, kind string, obj *unstructured
 		return fmt.Errorf("obj has no name? %+v", obj)
 	}
 	ns := getString(obj, "metadata", "namespace")
+	if group == "" {
+		group = "core"
+	}
 	dir := filepath.Join(args.OutputDirectory, host, group, kind, ns, name)
 	err = os.MkdirAll(dir, 0o700)
 	if err != nil {
