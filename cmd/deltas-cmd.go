@@ -12,7 +12,7 @@ var deltasCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		dir := args[0]
-		return deltas.Deltas(dir, skipPatterns, onlyPatterns)
+		return deltas.Deltas(dir, skipPatterns, onlyPatterns, skipInitial)
 	},
 	SilenceUsage: true,
 }
@@ -20,10 +20,12 @@ var deltasCmd = &cobra.Command{
 var (
 	skipPatterns []string
 	onlyPatterns []string
+	skipInitial  bool
 )
 
 func init() {
 	RootCmd.AddCommand(deltasCmd)
 	deltasCmd.Flags().StringSliceVar(&skipPatterns, "skip", []string{}, "comma separated list of regex patterns to skip")
 	deltasCmd.Flags().StringSliceVar(&onlyPatterns, "only", []string{}, "comma separated list of regex patterns to show")
+	deltasCmd.Flags().BoolVar(&skipInitial, "skip-initial", false, "skip the initial output of the current state of the resources")
 }

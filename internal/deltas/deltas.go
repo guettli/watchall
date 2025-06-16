@@ -32,7 +32,7 @@ func (f fileType) String() string {
 	return filepath.Join(f.path, f.basename)
 }
 
-func Deltas(baseDir string, skipPatterns, onlyPatterns []string) error {
+func Deltas(baseDir string, skipPatterns, onlyPatterns []string, skipInitial bool) error {
 	baseDir = filepath.Clean(baseDir)
 	skipRegex := make([]*regexp.Regexp, 0, len(skipPatterns))
 	for _, pattern := range skipPatterns {
@@ -98,7 +98,7 @@ func Deltas(baseDir string, skipPatterns, onlyPatterns []string) error {
 		return files[i].basename < files[j].basename
 	})
 	for _, file := range files {
-		err := showFile(baseDir, file, startTimestamp, true)
+		err := showFile(baseDir, file, startTimestamp, !skipInitial)
 		if err != nil {
 			return fmt.Errorf("showFile() failed: %w", err)
 		}
@@ -135,7 +135,14 @@ func showFile(baseDir string, file fileType, startTimestamp string, showInitialY
 		}
 	}
 
-	// fmt.Printf("File: %s\n", file.String())
+	if strings.HasSuffix(file.basename, ".log") {
+		data, err := os.ReadFile(filepath.Join(baseDir, file.path, file.basename))
+		if err != nil {
+			return fmt.Errorf("os.ReadFile() failed: %w", err)
+		}
+		fmt.Printf("Log: %s\n%s\n\n", file.String(), data)
+		return nil
+	}
 
 	absDir := filepath.Join(baseDir, file.path)
 	// find previous file
@@ -150,6 +157,9 @@ func showFile(baseDir string, file fileType, startTimestamp string, showInitialY
 	previous := ""
 	for _, entry := range dirEntries {
 		if entry.IsDir() {
+			continue
+		}
+		if !strings.HasSuffix(entry.Name(), ".yaml") {
 			continue
 		}
 		if found {
@@ -182,7 +192,8 @@ func showFile(baseDir string, file fileType, startTimestamp string, showInitialY
 		}
 		return nil
 	}
-	return compareTwoYamlFiles(baseDir, filepath.Join(absDir, previous), filepath.Join(absDir, file.basename))
+	return compareTwoYamlFiles(baseDir, filepath.Join(absDir, previous),
+		filepath.Join(absDir, file.basename))
 }
 
 func compareTwoYamlFiles(baseDir, f1, f2 string) error {
@@ -199,12 +210,12 @@ func compareTwoYamlFiles(baseDir, f1, f2 string) error {
 	// Decode the YAML into unstructured objects
 	obj1, err := yamlToUnstructured(yaml1)
 	if err != nil {
-		return fmt.Errorf("failed to decode first YAML: %w", err)
+		return fmt.Errorf("failed to decode first YAML: %q %w", f1, err)
 	}
 
 	obj2, err := yamlToUnstructured(yaml2)
 	if err != nil {
-		return fmt.Errorf("failed to decode second YAML: %w", err)
+		return fmt.Errorf("failed to decode second YAML: %q %w", f2, err)
 	}
 
 	// Strip irrelevant fields (like resourceVersion)
