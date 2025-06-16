@@ -224,7 +224,7 @@ func compareTwoYamlFiles(baseDir, f1, f2 string) error {
 
 	// Compare the objects
 	if equality.Semantic.DeepEqual(obj1, obj2) {
-		fmt.Printf("No changes in %q %q\n", f1, f2)
+		fmt.Printf("No changes in %q %q\n\n", f1, f2)
 		return nil
 	}
 	s1, err := unstructuredToString(obj1)
