@@ -23,7 +23,7 @@ var recordCmd = &cobra.Command{
 
 func init() {
 	recordCmd.Flags().BoolVarP(&arguments.WithLogs, "with-logs", "w", false, "Record logs of pods")
-	recordCmd.Flags().StringVar(&arguments.IgnoreLogLinesFile, "ignore-log-lines-file", "", "Path to file with log lines to ignore. Syntax of file format: filename regex ~~ line-regex. If line-regex is the logs of this pod is not watched. Example to ignore info lines: kube-system/cilium- ~~ level=info")
+	recordCmd.Flags().StringVar(&arguments.IgnoreLogLinesFile, "ignore-log-lines-file", "", "Path to file with log lines to ignore. Syntax of file format: filename regex ~~ line-regex. If line-regex is the logs of this pod is not watched. Example to ignore info lines: kube-system/cilium- ~~ level=info. Alternatively you can use --skip when using the 'deltas' sub-command.")
 	recordCmd.Flags().BoolVarP(&arguments.SkipRecordingResources, "skip-recording-resources", "", false, "Do not record changes to these resources. Only meaningful for --with-logs.")
 	RootCmd.AddCommand(recordCmd)
 }
