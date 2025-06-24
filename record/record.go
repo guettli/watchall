@@ -34,13 +34,13 @@ type IgnoreLogLine struct {
 	LineRegex *regexp.Regexp
 }
 type Arguments struct {
-	Verbose                bool
-	OutputDirectory        string
-	WithLogs               bool
-	SkipRecordingResources bool
-	IgnoreLogLinesFile     string
-	IgnoreLogLines         []IgnoreLogLine
-	IgnorePods             []*regexp.Regexp
+	Verbose                  bool
+	OutputDirectory          string
+	WithLogs                 bool
+	DisableResourceRecording bool
+	IgnoreLogLinesFile       string
+	IgnoreLogLines           []IgnoreLogLine
+	IgnorePods               []*regexp.Regexp
 }
 
 func RunRecordWithContext(ctx context.Context, args Arguments, kubeconfig clientcmd.ClientConfig) (*sync.WaitGroup, error) {
@@ -77,7 +77,7 @@ func RunRecordWithContext(ctx context.Context, args Arguments, kubeconfig client
 	host := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(config.Host, "https://"), "http://"), ":443")
 	var wg sync.WaitGroup
 
-	if !args.SkipRecordingResources {
+	if !args.DisableResourceRecording {
 		err = createRecorders(ctx, &wg, serverResources, args, dynClient, host)
 		if err != nil {
 			return nil, fmt.Errorf("createRecorders() failed: %w", err)

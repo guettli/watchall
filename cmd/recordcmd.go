@@ -23,8 +23,8 @@ var recordCmd = &cobra.Command{
 
 func init() {
 	recordCmd.Flags().BoolVarP(&arguments.WithLogs, "with-logs", "w", false, "Record logs of pods")
-	recordCmd.Flags().StringVar(&arguments.IgnoreLogLinesFile, "ignore-log-lines-file", "", "Path to file with log lines to ignore. Syntax of file format: filename regex ~~ line-regex. If line-regex is the logs of this pod is not watched. Example to ignore info lines: kube-system/cilium- ~~ level=info. Alternatively you can use --skip when using the 'deltas' sub-command.")
-	recordCmd.Flags().BoolVarP(&arguments.SkipRecordingResources, "skip-recording-resources", "", false, "Do not record changes to these resources. Only meaningful for --with-logs.")
+	recordCmd.Flags().StringVar(&arguments.IgnoreLogLinesFile, "ignore-log-lines-file", "", "Path to file containing log lines to ignore. Syntax of line based file format: 'filename-regex ~~ line-regex'. If line-regex is empty the pod won't be watched. Lines starting with '#', and empty lines get ignored. Example to ignore info lines of cilium: kube-system/cilium ~~ level=info. Alternatively you can use --skip when using the 'deltas' sub-command.")
+	recordCmd.Flags().BoolVarP(&arguments.DisableResourceRecording, "disable-resource-recording", "", false, "Do not watch/record changes to resources. Only meaningful if you only want logs: --with-logs.")
 	RootCmd.AddCommand(recordCmd)
 }
 
@@ -32,7 +32,7 @@ func runRecord(args record.Arguments) {
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	configOverrides := &clientcmd.ConfigOverrides{}
 	kubeconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
-	if args.SkipRecordingResources && !args.WithLogs {
+	if args.DisableResourceRecording && !args.WithLogs {
 		fmt.Println("Error: --skip-recording-resources is only meaningful with --with-logs")
 		os.Exit(1)
 	}
