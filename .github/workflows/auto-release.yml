@@ -1,0 +1,97 @@
+name: Auto Release
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Every 6 hours — catches unreleased commits if push event was missed
+    - cron: '0 */6 * * *'
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: go test ./...
+
+      - name: Lint
+        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run
+
+      - name: Check if HEAD needs a release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Use --list 'v*' so a non-version tag (e.g. 'latest') never suppresses a release
+          CURRENT_TAG=$(git tag --points-at HEAD --list 'v*' | sort -V | tail -1)
+          if [ -n "$CURRENT_TAG" ]; then
+            # HEAD is tagged — check if the GitHub Release also exists
+            if gh release view "$CURRENT_TAG" > /dev/null 2>&1; then
+              echo "new_release=false" >> "$GITHUB_OUTPUT"
+            else
+              # Tag exists but release is missing — recover by creating the release
+              echo "new_release=true" >> "$GITHUB_OUTPUT"
+              echo "new_tag=$CURRENT_TAG" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            # HEAD is untagged — bump patch version
+            LATEST=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo 'v0.0.0')
+            MAJOR=$(echo "$LATEST" | cut -d. -f1 | tr -d 'v')
+            MINOR=$(echo "$LATEST" | cut -d. -f2)
+            PATCH=$(echo "$LATEST" | cut -d. -f3)
+            NEW_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+            echo "new_release=true" >> "$GITHUB_OUTPUT"
+            echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push tag
+        if: steps.check.outputs.new_release == 'true'
+        run: |
+          NEW_TAG="${{ steps.check.outputs.new_tag }}"
+          # Skip if the tag already exists locally (recovery: tag was pushed in a prior failed run)
+          if git tag --list "$NEW_TAG" | grep -q .; then
+            echo "Tag $NEW_TAG already exists, skipping push"
+          else
+            git tag "$NEW_TAG"
+            git push origin "$NEW_TAG"
+          fi
+
+      - name: Build binaries
+        if: steps.check.outputs.new_release == 'true'
+        run: |
+          mkdir -p dist
+          # HEAD is now at the release tag — Go 1.24 embeds the version automatically
+          GOOS=linux   GOARCH=amd64 go build -trimpath -o dist/watchall-linux-amd64   .
+          GOOS=linux   GOARCH=arm64 go build -trimpath -o dist/watchall-linux-arm64   .
+          GOOS=darwin  GOARCH=amd64 go build -trimpath -o dist/watchall-darwin-amd64  .
+          GOOS=darwin  GOARCH=arm64 go build -trimpath -o dist/watchall-darwin-arm64  .
+          GOOS=windows GOARCH=amd64 go build -trimpath -o dist/watchall-windows-amd64.exe .
+
+      - name: Generate checksums
+        if: steps.check.outputs.new_release == 'true'
+        run: sha256sum dist/* > dist/checksums.txt
+
+      - name: Create GitHub Release
+        if: steps.check.outputs.new_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.check.outputs.new_tag }}" \
+            --title "${{ steps.check.outputs.new_tag }}" \
+            --generate-notes \
+            dist/*

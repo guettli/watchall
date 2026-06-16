@@ -35,11 +35,13 @@ func (f fileType) String() string {
 func Deltas(baseDir string, skipPatterns, onlyPatterns []string, skipInitial bool) error {
 	baseDir = filepath.Clean(baseDir)
 	skipRegex := make([]*regexp.Regexp, 0, len(skipPatterns))
+
 	for _, pattern := range skipPatterns {
 		r, err := regexp.Compile(pattern)
 		if err != nil {
 			return fmt.Errorf("regexp.Compile() failed: %q %w", pattern, err)
 		}
+
 		skipRegex = append(skipRegex, r)
 	}
 
@@ -49,45 +51,58 @@ func Deltas(baseDir string, skipPatterns, onlyPatterns []string, skipInitial boo
 		if err != nil {
 			return fmt.Errorf("regexp.Compile() failed: %q %w", pattern, err)
 		}
+
 		onlyRegex = append(onlyRegex, r)
 	}
+
 	records, err := filepath.Glob(filepath.Join(baseDir, "record-*"))
 	if err != nil {
 		return fmt.Errorf("os.Glob() failed: %w", err)
 	}
+
 	if len(records) == 0 {
 		return fmt.Errorf("no record-YYYYMM... file found in %s", baseDir)
 	}
+
 	slices.Sort(records)
+
 	record := records[len(records)-1]
 	startTimestamp := strings.SplitN(filepath.Base(record), "-", 2)[1]
 	fmt.Printf("Using %q as start timestamp\n", record)
+
 	var files []fileType
 
 	err = filepath.WalkDir(baseDir, func(path string, info os.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("filepath.WalkDir() failed: %w", err)
 		}
+
 		if info.IsDir() {
 			return nil
 		}
+
 		if filepath.Dir(path) == baseDir {
 			return nil
 		}
+
 		if info.Name() < startTimestamp {
 			return nil
 		}
+
 		if doSkip(skipRegex, onlyRegex, path) {
 			return nil
 		}
+
 		p, err := filepath.Rel(baseDir, filepath.Dir(path))
 		if err != nil {
 			return fmt.Errorf("filepath.Rel() failed: %w", err)
 		}
+
 		files = append(files, fileType{
 			basename: info.Name(),
 			path:     p,
 		})
+
 		return nil
 	})
 	if err != nil {
@@ -97,12 +112,14 @@ func Deltas(baseDir string, skipPatterns, onlyPatterns []string, skipInitial boo
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].basename < files[j].basename
 	})
+
 	for _, file := range files {
 		err := showFile(baseDir, file, startTimestamp, !skipInitial)
 		if err != nil {
 			return fmt.Errorf("showFile() failed: %w", err)
 		}
 	}
+
 	return nil
 }
 
@@ -113,13 +130,16 @@ func doSkip(skipRegex, onlyRegex []*regexp.Regexp, path string) bool {
 				return false
 			}
 		}
+
 		return true
 	}
+
 	for _, r := range skipRegex {
 		if r.MatchString(path) {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -128,6 +148,7 @@ func showFile(baseDir string, file fileType, startTimestamp string, showInitialY
 		// fmt.Printf("Skipping %q because before %s %s\n", file.String(), startTimestamp, previous)
 		return nil
 	}
+
 	for _, resource := range resourcesToSkip {
 		if strings.HasPrefix(file.path, resource+string(filepath.Separator)) {
 			// fmt.Printf("Skipping %s\n", file.String())
@@ -140,7 +161,9 @@ func showFile(baseDir string, file fileType, startTimestamp string, showInitialY
 		if err != nil {
 			return fmt.Errorf("os.ReadFile() failed: %w", err)
 		}
+
 		fmt.Printf("Log: %s\n%s\n\n", file.String(), data)
+
 		return nil
 	}
 
@@ -150,50 +173,70 @@ func showFile(baseDir string, file fileType, startTimestamp string, showInitialY
 	if err != nil {
 		return fmt.Errorf("os.ReadDir() failed: %w", err)
 	}
+
 	sort.Slice(dirEntries, func(i, j int) bool {
 		return dirEntries[i].Name() > dirEntries[j].Name()
 	})
+
 	found := false
 	previous := ""
+
 	for _, entry := range dirEntries {
 		if entry.IsDir() {
 			continue
 		}
+
 		if !strings.HasSuffix(entry.Name(), ".yaml") {
 			continue
 		}
+
 		if found {
 			previous = entry.Name()
 			break
 		}
+
 		if entry.Name() == file.basename {
 			found = true
 		}
 	}
+
 	if !found {
 		return fmt.Errorf("internal error. Not found: %q %s", file.path, file.basename)
 	}
+
 	if previous == "" {
-		if showInitialYaml {
-			content, err := os.ReadFile(filepath.Join(absDir, file.basename))
-			if err != nil {
-				return fmt.Errorf("os.ReadFile() failed: %w", err)
-			}
-			obj, err := yamlToUnstructured(content)
-			if err != nil {
-				return fmt.Errorf("failed to decode first YAML: %w", err)
-			}
-			stripIrrelevantFields(obj)
-			s, err := unstructuredToString(obj)
-			if err != nil {
-				return fmt.Errorf("unstructuredToString failed %q: %w", file.basename, err)
-			}
-			fmt.Printf("\nInitial YAML: %s\n%s", file.String(), s)
-		}
-		return nil
+		return showInitialFile(absDir, file, showInitialYaml)
 	}
+
 	return compareTwoYamlFiles(baseDir, filepath.Join(absDir, previous),
 		filepath.Join(absDir, file.basename))
+}
+
+func showInitialFile(absDir string, file fileType, showInitialYaml bool) error {
+	if !showInitialYaml {
+		return nil
+	}
+
+	content, err := os.ReadFile(filepath.Join(absDir, file.basename))
+	if err != nil {
+		return fmt.Errorf("os.ReadFile() failed: %w", err)
+	}
+
+	obj, err := yamlToUnstructured(content)
+	if err != nil {
+		return fmt.Errorf("failed to decode first YAML: %w", err)
+	}
+
+	stripIrrelevantFields(obj)
+
+	s, err := unstructuredToString(obj)
+	if err != nil {
+		return fmt.Errorf("unstructuredToString failed %q: %w", file.basename, err)
+	}
+
+	fmt.Printf("\nInitial YAML: %s\n%s", file.String(), s)
+
+	return nil
 }
 
 func compareTwoYamlFiles(baseDir, f1, f2 string) error {
@@ -227,50 +270,62 @@ func compareTwoYamlFiles(baseDir, f1, f2 string) error {
 		fmt.Printf("No changes in %q %q\n\n", f1, f2)
 		return nil
 	}
+
 	s1, err := unstructuredToString(obj1)
 	if err != nil {
 		return fmt.Errorf("unstructuredToString failed %q: %w", f1, err)
 	}
+
 	s2, err := unstructuredToString(obj2)
 	if err != nil {
 		return fmt.Errorf("unstructuredToString failed %q: %w", f2, err)
 	}
 
 	diff := textdiff.Unified(filepath.Base(f1), filepath.Base(f2), s1, s2)
+
 	p, err := filepath.Rel(baseDir, f1)
 	if err != nil {
 		return fmt.Errorf("filepath.Rel() failed: %w", err)
 	}
+
 	time1, err := baseNameToTimestamp(filepath.Base(f1))
 	if err != nil {
 		return fmt.Errorf("baseNameToTimestamp failed: %w", err)
 	}
+
 	time2, err := baseNameToTimestamp(filepath.Base(f2))
 	if err != nil {
 		return fmt.Errorf("baseNameToTimestamp failed: %w", err)
 	}
+
 	d := time2.Sub(time1)
 	fmt.Printf("\nDiff of %q %q (%s)\n%s\n\n", p, filepath.Base(f2),
 		d.Truncate(time.Second).String(), diff)
+
 	return nil
 }
 
 func baseNameToTimestamp(baseName string) (time.Time, error) {
 	baseName = strings.TrimSuffix(baseName, ".yaml")
+
 	t, err := time.Parse(record.TimeFormat, baseName)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("time.Parse() format=%s failed: %w", record.TimeFormat, err)
 	}
+
 	return t, nil
 }
 
 func unstructuredToString(obj *unstructured.Unstructured) (string, error) {
 	serializer := json.NewYAMLSerializer(json.DefaultMetaFactory, nil, nil)
+
 	var buffer bytes.Buffer
+
 	err := serializer.Encode(obj, &buffer)
 	if err != nil {
 		return "", fmt.Errorf("failed to serialize to YAML: %w", err)
 	}
+
 	return buffer.String(), nil
 }
 
@@ -283,7 +338,9 @@ func yamlToUnstructured(yamlData []byte) (*unstructured.Unstructured, error) {
 
 	// Unmarshal JSON into an unstructured.Unstructured object
 	obj := &unstructured.Unstructured{}
-	if err := obj.UnmarshalJSON(jsonData); err != nil {
+
+	err = obj.UnmarshalJSON(jsonData)
+	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal JSON to Unstructured: %w", err)
 	}
 

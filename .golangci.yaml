@@ -1,22 +1,55 @@
+version: "2"
 linters:
-  enable-all: true
+  default: all
   disable:
+    - cyclop
     - depguard
-    - lll
-    - nlreturn
-    - wsl
-    - mnd
-    - tenv
-    - gochecknoinits
     - err113
     - exhaustruct
     - forbidigo
-    - gochecknoglobals
-    - varnamelen
     - funlen
-    - cyclop
+    - gochecknoglobals
+    - gochecknoinits
+    - gocognit
+    - lll
+    - mnd
+    - nlreturn
+    - nonamedreturns
+    - perfsprint
+    - testpackage
+    - thelper
+    - varnamelen
+    - gomodguard
+    - wsl
+  settings:
+    cyclop:
+      max-complexity: 15
+    paralleltest:
+      ignore-missing: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+    rules:
+      - linters:
+          - goconst
+        path: _test\.go
+formatters:
   enable:
-    - errcheck
-linters-settings:
-  cyclop:
-    max-complexity: 15
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

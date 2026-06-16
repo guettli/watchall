@@ -15,7 +15,7 @@ import (
 var recordCmd = &cobra.Command{
 	Use:   "record",
 	Short: "record all changes to resource objects",
-	Long:  `...`,
+	Long:  longPlaceholder,
 	Run: func(_ *cobra.Command, _ []string) {
 		runRecord(arguments)
 	},
@@ -32,10 +32,12 @@ func runRecord(args record.Arguments) {
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	configOverrides := &clientcmd.ConfigOverrides{}
 	kubeconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
+
 	if args.DisableResourceRecording && !args.WithLogs {
 		fmt.Println("Error: --skip-recording-resources is only meaningful with --with-logs")
 		os.Exit(1)
 	}
+
 	if args.IgnoreLogLinesFile != "" {
 		err := parseIgnoreLogLinesFile(args.IgnoreLogLinesFile, &args)
 		if err != nil {
@@ -49,33 +51,40 @@ func runRecord(args record.Arguments) {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
+
 	wg.Wait()
 }
 
 func parseIgnoreLogLinesFile(filename string, args *record.Arguments) error {
-	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		return err
+	_, statErr := os.Stat(filename)
+	if os.IsNotExist(statErr) {
+		return fmt.Errorf("file not found: %w", statErr)
 	}
+
 	lines, err := os.ReadFile(filename)
 	if err != nil {
-		return fmt.Errorf("Error reading file: %w", err)
+		return fmt.Errorf("reading file: %w", err)
 	}
+
 	for _, line := range strings.Split(string(lines), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue // Skip empty lines and comments
 		}
+
 		parts := strings.Split(line, "~~")
 		if len(parts) > 2 {
-			return fmt.Errorf("Invalid line. Expected file-regex ~~ line-regex: %q\n", line)
+			return fmt.Errorf("invalid line, expected file-regex ~~ line-regex: %q", line)
 		}
+
 		fileRegex := strings.TrimSpace(parts[0])
 		if fileRegex == "" {
-			return fmt.Errorf("File regex is empty: %q\n", line)
+			return fmt.Errorf("file regex is empty: %q", line)
 		}
+
 		fRegex, err := regexp.Compile(fileRegex)
 		if err != nil {
-			return fmt.Errorf("Invalid file regex %q: %w", fileRegex, err)
+			return fmt.Errorf("invalid file regex %q: %w", fileRegex, err)
 		}
 
 		var lineRegex string
@@ -87,14 +96,17 @@ func parseIgnoreLogLinesFile(filename string, args *record.Arguments) error {
 			args.IgnorePods = append(args.IgnorePods, fRegex)
 			continue
 		}
+
 		lRegex, err := regexp.Compile(lineRegex)
 		if err != nil {
-			return fmt.Errorf("Invalid line regex %q: %w", lineRegex, err)
+			return fmt.Errorf("invalid line regex %q: %w", lineRegex, err)
 		}
+
 		args.IgnoreLogLines = append(args.IgnoreLogLines, record.IgnoreLogLine{
 			FileRegex: fRegex,
 			LineRegex: lRegex,
 		})
 	}
+
 	return nil
 }

@@ -15,7 +15,7 @@ import (
 var logsCmd = &cobra.Command{
 	Use:   "logs",
 	Short: "Check all logs of all pods",
-	Long:  `...`,
+	Long:  longPlaceholder,
 	Run: func(_ *cobra.Command, _ []string) {
 		runLogs()
 	},
@@ -45,7 +45,7 @@ func runLogs() {
 	}
 
 	// List all pods
-	pods, err := clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	pods, err := clientset.CoreV1().Pods(arguments.Namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		panic(err.Error())
 	}

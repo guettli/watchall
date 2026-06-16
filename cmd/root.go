@@ -7,16 +7,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const longPlaceholder = `...`
+
 var RootCmd = &cobra.Command{
 	Use:   "watchall",
 	Short: "Watch resources in your Kubernetes cluster.",
-	Long:  `...`,
+	Long:  longPlaceholder,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	if err := RootCmd.Execute(); err != nil {
+	err := RootCmd.Execute()
+	if err != nil {
 		os.Exit(1)
 	}
 }
@@ -29,4 +32,5 @@ func init() {
 	// will be global for your application.
 	RootCmd.PersistentFlags().BoolVarP(&arguments.Verbose, "verbose", "v", false, "Create more output")
 	RootCmd.PersistentFlags().StringVarP(&arguments.OutputDirectory, "outdir", "o", "watchall-output", "Directory to store output")
+	RootCmd.PersistentFlags().StringVarP(&arguments.Namespace, "namespace", "n", "", "Kubernetes namespace to watch (default: all namespaces)")
 }
