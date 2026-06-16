@@ -1,8 +1,6 @@
 module github.com/guettli/watchall
 
-go 1.23.0
-
-toolchain go1.23.3
+go 1.25.0
 
 require (
 	github.com/gavv/cobradoc v1.1.0

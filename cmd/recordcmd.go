@@ -66,7 +66,7 @@ func parseIgnoreLogLinesFile(filename string, args *record.Arguments) error {
 		return fmt.Errorf("reading file: %w", err)
 	}
 
-	for _, line := range strings.Split(string(lines), "\n") {
+	for line := range strings.SplitSeq(string(lines), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue // Skip empty lines and comments
