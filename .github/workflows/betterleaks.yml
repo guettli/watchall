@@ -1,0 +1,25 @@
+# Scan all files for secrets. The pre-commit hook only sees staged changes,
+# so this also catches commits made with --no-verify or in the web UI.
+name: betterleaks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  betterleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # Installs only betterleaks, at the version pinned in mise.toml.
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: betterleaks
+
+      - name: Scan all files
+        run: betterleaks dir . --redact --no-banner
